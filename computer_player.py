@@ -13,10 +13,11 @@ class ComputerPlayer(Player):
 
 class RandomStrategyPlayer(ComputerPlayer):
     """Computer player that chooses actions randomly"""
-    def choose_first_action(self, game_state: Dict) -> Tuple[str, Optional[Player]]:
+    def choose_first_action(self, game_state: Dict) -> Tuple[str, Optional[int], Optional[Player]]:
         """
-        Returns: (action_type, target_player)
+        Returns: (action_type, draw_count, target_player)
         action_type: 'draw', 'take', or 'pass'
+        draw_count: number of cards to draw if action is 'draw', None otherwise
         target_player: Player object if action is 'take', None otherwise
         """
         if len(game_state['current_player'].hand) > 19:
@@ -28,11 +29,15 @@ class RandomStrategyPlayer(ComputerPlayer):
         elif len(game_state['other_players']) == 2:
             choices = [('draw', 1, None), ('draw', 2, None), ('draw', 3, None), ('take', None, game_state['other_players'][0]), ('take', None, game_state['other_players'][1]), ('pass', None, None)]
 
-        elif len(game_state['current_player'].hand) > 18:
-            choices.pop(('draw', 3, None))
-            choices.pop(('draw', 2, None))
+        if len(game_state['current_player'].hand) > 18:
+            choices.remove(('draw', 3, None))
+            choices.remove(('draw', 2, None))
         elif len(game_state['current_player'].hand) > 17:
-            choices.pop(('draw', 3, None))
+            choices.remove(('draw', 3, None))
+
+        for player in game_state['other_players']:
+            if len(player.hand) <= 2:
+                choices.remove(('take', None, player))
 
         return random.choice(choices)
     
@@ -46,14 +51,19 @@ class RandomStrategyPlayer(ComputerPlayer):
             if len(game_state['other_players']) == 1:
                 choices = [('take', None, game_state['other_players'][0]), ('pass', None, None)]
             elif len(game_state['other_players']) == 2:
-                choices = [('take', None, game_state['other_players'][0]), ('pass', None, None)]
+                choices = [('take', None, game_state['other_players'][0]), ('take', None, game_state['other_players'][1]), ('pass', None, None)]
+
+            for player in game_state['other_players']:
+                if len(player.hand) <= 2:
+                    choices.remove(('take', None, player))
+        
         elif first_action == 'take':
             choices = [('draw', 1, None), ('draw', 2, None), ('draw', 3, None), ('pass', None, None)]
             if len(game_state['current_player'].hand) > 18:
-                choices.pop(('draw', 3, None))
-                choices.pop(('draw', 2, None))
+                choices.remove(('draw', 3, None))
+                choices.remove(('draw', 2, None))
             elif len(game_state['current_player'].hand) > 17:
-                choices.pop(('draw', 3, None))
+                choices.remove(('draw', 3, None))
         
         return random.choice(choices)
         
@@ -86,8 +96,6 @@ class ExpectationValueStrategyPlayer(ComputerPlayer):
             expectations.pop(('draw', 3, None))
         elif len(game_state['current_player'].hand) > 17:
             expectations.pop(('draw', 3, None))
-            
-        print(f"choose first action: {expectations}")
 
         best_action = max(expectations, key=lambda x: expectations[x])
         action_type = best_action[0]
@@ -136,8 +144,6 @@ class ExpectationValueStrategyPlayer(ComputerPlayer):
                 expectations.pop(('draw', 3, None))
             elif len(game_state['current_player'].hand) > 17:
                 expectations.pop(('draw', 3, None))
-
-        print(f"choose second action: {expectations}")
         
         best_action = max(expectations, key=lambda x: expectations[x])
         action_type = best_action[0]
@@ -229,8 +235,6 @@ class ProbabilityStrategyPlayer(ComputerPlayer):
         elif len(game_state['current_player'].hand) > 17:
             probabilities.pop(('draw', 3, None))
 
-        print(f"choose first action: {probabilities}")
-
         best_action = max(probabilities, key=lambda x: probabilities[x])
         action_type = best_action[0]
 
@@ -267,8 +271,6 @@ class ProbabilityStrategyPlayer(ComputerPlayer):
                 probabilities.pop(('draw', 3, None))
             elif len(game_state['current_player'].hand) > 17:
                 probabilities.pop(('draw', 3, None))
-
-        print(f"choose second action: {probabilities}")
         
         best_action = max(probabilities, key=lambda x: probabilities[x])
         action_type = best_action[0]
