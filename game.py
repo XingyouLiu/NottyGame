@@ -4,7 +4,7 @@ from typing import List, Tuple, Dict, Optional, Set
 from player import Player
 from collection_of_cards import CollectionOfCards
 import random
-from computer_player import ComputerPlayer, RandomStrategyPlayer, ExpectationValueStrategyPlayer
+from computer_player import ComputerPlayer, RandomStrategyPlayer, ExpectationValueStrategyPlayer, ProbabilityStrategyPlayer
 
 
 class GamePhase:
@@ -40,11 +40,12 @@ class Game:
 
         # button positions
         self.button_positions = {
-            'draw': pygame.Rect(self.width - 150, self.height - 100, 120, 80),
-            'take': pygame.Rect(self.width - 150, self.height - 180, 120, 80),
-            'discard': pygame.Rect(self.width - 150, self.height - 260, 120, 80),
-            'pass': pygame.Rect(self.width - 150, self.height - 340, 120, 80),
-            'next': pygame.Rect(self.width - 150, self.height - 420, 120, 80)
+            'finish draw': pygame.Rect(self.width - 150, self.height - 100, 120, 80),
+            'draw': pygame.Rect(self.width - 150, self.height - 180, 120, 80),
+            'take': pygame.Rect(self.width - 150, self.height - 260, 120, 80),
+            'discard': pygame.Rect(self.width - 150, self.height - 340, 120, 80),
+            'pass': pygame.Rect(self.width - 150, self.height - 420, 120, 80),
+            'next': pygame.Rect(self.width - 150, self.height - 500, 120, 80)
         }
 
         # player to take card from - select buttons
@@ -69,11 +70,14 @@ class Game:
 
     def initial_turn_state(self):
         return {
-            'action_taken': False,  # mark if the main action has been taken (Draw already 3 cards/Take/Pass)
             'has_drawn': False,  # mark if at least one card has been drawn
+            'is_drawing': False,  # mark if currently drawing cards
+            'is_finished_drawing': False,  # mark if finished drawing cards
+            'drawed_cards': [],  # record all cards drawn in this turn
             'has_taken': False,  # mark if a card has been taken
             'cards_drawn': 0,  # record how many cards have been drawn in this turn
-            'waiting_for_take': False  # mark if having clicked 'Take' button and waiting for selecting a card to take
+            'waiting_for_take': False,  # mark if having clicked 'Take' button and waiting for selecting a card to take
+            'has_passed': False  # mark if having passed this turn
         }
 
     def load_assets(self):
@@ -88,7 +92,7 @@ class Game:
         self.background = pygame.transform.scale(background_image, (self.width, self.height))
 
         self.buttons = {}
-        for button_name in ['draw', 'take', 'discard', 'pass', 'next']:
+        for button_name in ['draw', 'finish draw', 'take', 'discard', 'pass', 'next']:
             button_image = pygame.image.load(os.path.join('buttons', f'{button_name}_normal.png'))
             self.buttons[button_name] = pygame.transform.scale(button_image, (
             self.button_positions[button_name].width, self.button_positions[button_name].height))
@@ -98,7 +102,7 @@ class Game:
 
         if self.current_player:
             turn_text = f"Current Turn: {self.current_player.name}"
-            turn_surface = font.render(turn_text, True, self.BLACK)
+            turn_surface = font.render(turn_text, True, self.BLACK) 
             turn_rect = turn_surface.get_rect(centerx=self.width // 2, top=20)
             self.screen.blit(turn_surface, turn_rect)
 
@@ -116,8 +120,18 @@ class Game:
 
         self.display_valid_groups_panel()
 
-        if self.message:
-            messages = self.message.split('\n')
+        if self.message or self.turn_state['is_drawing']:
+            messages = []
+            if self.turn_state['is_drawing']:
+                if self.turn_state['cards_drawn'] == 3:
+                    messages.append(f"{self.current_player.name} has drew {len(self.turn_state['drawed_cards'])} cards (reached maximum draw limit 3 for this turn)")
+                else:
+                    messages.append(f"{self.current_player.name} has drew {len(self.turn_state['drawed_cards'])} cards ({3 - self.turn_state['cards_drawn']} draws remaining)")
+                if self.message and self.message != messages[0]:
+                    messages.extend(self.message.split('\n'))
+            else:
+                messages = self.message.split('\n')
+
             for i, message_line in enumerate(messages):
                 words = message_line.split()
                 lines = []
@@ -156,7 +170,9 @@ class Game:
             ("Computer 1 (Random Strategy)", RandomStrategyPlayer("Computer 1")),
             ("Computer 2 (Random Strategy)", RandomStrategyPlayer("Computer 2")),
             ("Computer 3 (Calculating Expectation Strategy)", ExpectationValueStrategyPlayer("Computer 3")),
-            ("Computer 4 (Calculating Expectation Strategy)", ExpectationValueStrategyPlayer("Computer 4"))
+            ("Computer 4 (Calculating Expectation Strategy)", ExpectationValueStrategyPlayer("Computer 4")),
+            ("Computer 5 (Probability Strategy)", ProbabilityStrategyPlayer("Computer 5")),
+            ("Computer 6 (Probability Strategy)", ProbabilityStrategyPlayer("Computer 6"))
         ]
 
         button_height = 50
@@ -199,7 +215,11 @@ class Game:
 
     def display_action_buttons(self):
         for action, rect in self.button_positions.items():
-            self.screen.blit(self.buttons[action], rect)
+            if action == 'finish draw':
+                if self.turn_state['is_drawing']:
+                    self.screen.blit(self.buttons[action], rect)
+            else:
+                self.screen.blit(self.buttons[action], rect)
 
     def display_player_hand(self, player: Player, y_position: int):
         font = pygame.font.Font(None, 36)
@@ -347,7 +367,14 @@ class Game:
 
         for action, rect in self.button_positions.items():
             if rect.collidepoint(pos):
-                if action == 'draw':
+                if action != 'take':
+                    self.showing_player_select_buttons = False
+                    self.turn_state['waiting_for_take'] = False
+
+                if action == 'finish draw':
+                    if self.turn_state['is_drawing']:
+                        self.human_finish_drawing()
+                elif action == 'draw':
                     self.human_draw()
                 elif action == 'take':
                     self.human_select_take()
@@ -382,13 +409,12 @@ class Game:
                 break
 
     def human_draw(self):
-        if self.turn_state['action_taken']:
-            if self.turn_state['has_taken']:
-                self.message = "Cannot draw - already took a card from another player this turn"
-            elif self.turn_state['cards_drawn'] >= 3:
-                self.message = "Cannot draw - already drew maximum 3 cards this turn"
-            else:
-                self.message = "Cannot draw - already took an action this turn"
+        if self.turn_state['is_finished_drawing']:
+            self.message = "Cannot draw - already finished drawing this turn"
+            return
+
+        if self.turn_state['cards_drawn'] >= 3:
+            self.message = "Cannot draw - already drew maximum 3 cards this turn"
             return
 
         if len(self.current_player.hand) >= 20:
@@ -396,29 +422,38 @@ class Game:
             return
 
         card = self.deck.pop()
-        self.current_player.add_card(card)
+        self.turn_state['drawed_cards'].append(card)
+        self.turn_state['is_drawing'] = True
         self.turn_state['cards_drawn'] += 1
         self.turn_state['has_drawn'] = True
-        self.message = f"{self.current_player.name} drew {card[0]} {card[1]}"
+        self.message = f"{self.current_player.name} has drew {len(self.turn_state['drawed_cards'])} cards"
 
         if self.turn_state['cards_drawn'] == 3:
-            self.turn_state['action_taken'] = True
             self.message += " (reached maximum draw limit 3 for this turn)"
         else:
             self.message += f" ({3 - self.turn_state['cards_drawn']} draws remaining)"
 
+    def human_finish_drawing(self):
+        if not self.turn_state['is_drawing']:
+            self.message = "Cannot finish drawing - not currently drawing"
+            return
+
+        self.turn_state['is_drawing'] = False
+        self.turn_state['is_finished_drawing'] = True
+        self.message = f"{self.current_player.name} finished drawing cards"
+        for card in self.turn_state['drawed_cards']:
+            self.current_player.add_card(card)
+        self.message += f"\nHas drew: {', '.join(f'{card[0]} {card[1]}' for card in self.turn_state['drawed_cards'])}"
+        self.turn_state['drawed_cards'] = []
         self.check_and_display_valid_groups()
 
     def human_select_take(self):
-        if self.turn_state['has_drawn']:
-            self.message = "Cannot take - already drew cards this turn"
+        if self.turn_state['is_drawing']:
+            self.message = "Cannot take - please finish drawing cards first"
             return
 
-        if self.turn_state['action_taken']:
-            if self.turn_state['has_taken']:
-                self.message = "Cannot take - already took a card this turn"
-            else:
-                self.message = "Cannot take - already took an action this turn"
+        if self.turn_state['has_taken']:
+            self.message = "Cannot take - already took a card this turn"
             return
 
         if len(self.current_player.hand) >= 20:
@@ -437,7 +472,6 @@ class Game:
         target_player.remove_card(taken_card)
         self.current_player.add_card(taken_card)
 
-        self.turn_state['action_taken'] = True
         self.turn_state['has_taken'] = True
         self.turn_state['waiting_for_take'] = False
         self.showing_player_select_buttons = False
@@ -454,6 +488,10 @@ class Game:
             self.check_and_display_valid_groups()
 
     def human_discard(self):
+        if self.turn_state['is_drawing']:
+            self.message = "Cannot discard - please finish drawing cards first"
+            return
+
         if not self.current_player.exist_valid_group():
             self.message = "No valid groups available to discard"
             return
@@ -495,22 +533,20 @@ class Game:
                 self.message = "Group discarded"
 
     def human_pass(self):
-        if self.turn_state['has_drawn']:
-            self.message = "Cannot pass - already drew cards this turn"
+        if self.turn_state['has_drawn'] or self.turn_state['has_taken']:
+            self.message = "Cannot pass - already took other actions this turn"
             return
-        if self.turn_state['action_taken']:
-            if self.turn_state['has_taken']:
-                self.message = "Cannot pass - already took a card this turn"
-            else:
-                self.message = "Cannot pass - already took an action this turn"
-            return
-
-        self.turn_state['action_taken'] = True
+        
         self.message = f"{self.current_player.name} passed turn"
+        self.turn_state['has_passed'] = True
         self.human_start_next_turn()
 
     def human_start_next_turn(self):
-        if not (self.turn_state['action_taken'] or self.turn_state['has_drawn']):
+        if self.turn_state['is_drawing']:
+            self.message = "Have you finished drawing cards? Please click 'Finish Draw' button before starting next turn"
+            return
+
+        if not self.turn_state['has_drawn'] and not self.turn_state['has_taken'] and not self.turn_state['has_passed']:
             self.message = "You must take an action before starting next turn"
             return
 
@@ -580,20 +616,33 @@ class Game:
         self.update_screen()
         pygame.time.wait(1500)
 
-        action, target_player = self.current_player.choose_action(game_state)
+        action, draw_count, target_player = self.current_player.choose_first_action(game_state)
 
         if action == 'draw':
-            self.computer_draw(game_state)
+            self.computer_draw(draw_count)
+            
         elif action == 'take':
             self.computer_take(target_player)
+
         elif action == 'pass':
             self.message = f"{self.current_player.name} chooses to pass"
             self.update_screen()
             pygame.time.wait(1500)
             self.computer_start_next_turn()
             return
+        
+        action, draw_count, target_player = self.current_player.choose_second_action(game_state, action)
 
-        self.computer_start_next_turn()
+        if action == 'draw':
+            self.computer_draw(draw_count)
+            self.computer_start_next_turn()
+        elif action == 'take':
+            self.computer_take(target_player)
+            self.computer_start_next_turn()
+        elif action == 'pass':
+            self.computer_start_next_turn()
+
+
 
     def computer_take(self, target_player: Player):
         if target_player.hand:
@@ -610,16 +659,16 @@ class Game:
                 self.update_screen()
                 self.show_game_over_popup(target_player.name)
 
-            if self.check_and_display_valid_groups():
+            while self.check_and_display_valid_groups():
                 self.computer_discard()
 
             self.update_screen()
             pygame.time.wait(1500)
 
-    def computer_draw(self, game_state: Dict):
+    def computer_draw(self, draw_count: int):
         drawn_cards = []
 
-        for i in range(3):
+        for i in range(draw_count):
             if len(self.current_player.hand) >= 20:
                 self.message = f"{self.current_player.name} has reached maximum hand size, cannot draw anymore"
                 self.update_screen()
@@ -627,31 +676,34 @@ class Game:
                 return
 
             card = self.deck.pop()
-            self.current_player.add_card(card)
             drawn_cards.append(card)
 
-            self.message = f"{self.current_player.name} drew {card[0]} {card[1]} \n Has drew: {', '.join(f'{card[0]} {card[1]}' for card in drawn_cards)}"
+            self.message = f"{self.current_player.name} drew {i + 1} cards"
             self.update_screen()
             pygame.time.wait(1500)
+        
+        for card in drawn_cards:
+            self.current_player.add_card(card)
+            
+        self.message += f"\nHas drew: {', '.join(f'{card[0]} {card[1]}' for card in drawn_cards)}"
+        self.update_screen()
+        pygame.time.wait(1500)
 
-            if self.check_and_display_valid_groups():
-                self.computer_discard()
+        while self.check_and_display_valid_groups():
+            self.computer_discard()
 
-            self.update_screen()
-            pygame.time.wait(1500)
-
-            if i < 2:
-                continue_draw = self.current_player.continue_draw(game_state)
-                if continue_draw == 0:
-                    break
 
     def computer_discard(self):
         largest_group = self.current_player.largest_valid_group()
         if largest_group:
+            self.update_screen()
+            self.highlight_computer_valid_groups(largest_group)
+
             for card in largest_group:
                 self.current_player.remove_card(card)
                 self.deck.append(card)
             random.shuffle(self.deck)
+            
             self.message = f"{self.current_player.name} discarded group: {', '.join(f'{card[0]} {card[1]}' for card in largest_group)}"
             self.update_screen()
             pygame.time.wait(2000)
@@ -661,9 +713,29 @@ class Game:
                 self.message = f"{self.current_player.name} wins!"
                 self.update_screen()
                 self.show_game_over_popup(self.current_player.name)
+                
 
-    def highlight_computer_valid_groups(self):
-        pass
+    def highlight_computer_valid_groups(self, cards_to_highlight: List[Tuple[str, int]]):
+        if not cards_to_highlight:
+            return
+
+        highlight_indices = []
+        for card in cards_to_highlight:
+            try:
+                index = self.current_player.hand.index(card)
+                highlight_indices.append(index)
+            except ValueError:
+                continue
+
+        player_index = self.players.index(self.current_player)
+        y = 100 + player_index * 150
+        for card_index in highlight_indices:
+            x = self.CARD_LEFT_MARGIN + card_index * self.CARD_SPACING
+            pygame.draw.rect(self.screen, self.GREEN, (x, y, self.CARD_WIDTH, self.CARD_HEIGHT), 3)
+
+        pygame.display.flip()
+        pygame.time.wait(1000)  
+        
 
     def update_screen(self):
         """
@@ -730,3 +802,4 @@ class Game:
 if __name__ == "__main__":
     game = Game()
     game.run()
+
