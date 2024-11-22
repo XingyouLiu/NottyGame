@@ -35,7 +35,7 @@ class Game:
         self.players: List[Player] = []
         self.game_phase = GamePhase.SETUP
         self.current_player = None
-        self.selected_cards: List[int] = []
+        self.selected_cards: List[Card] = []
         self.turn_state = self.initial_turn_state()
 
         # button positions
@@ -422,14 +422,14 @@ class Game:
             return
 
         # Check if any card was clicked using Card's collision detection
-        for i, card in enumerate(self.current_player.cards):
+        for card in self.current_player.cards:
             if card.contains_point(pos):
                 if self.current_player.exist_valid_group():
-                    if i in self.selected_cards:
-                        self.selected_cards.remove(i)
+                    if card in self.selected_cards:
+                        self.selected_cards.remove(card)
                         card.selected = False
                     else:
-                        self.selected_cards.append(i)
+                        self.selected_cards.append(card)
                         card.selected = True
                 else:
                     self.message = "No valid groups to discard"
@@ -616,16 +616,16 @@ class Game:
         if not self.turn_state['waiting_for_take']:
             return
 
-        taken_card = random.choice(target_player.hand)
+        taken_card = random.choice(target_player.cards)
         target_player.remove_card(taken_card)
-        self.current_player.add_card(taken_card)
+        self.current_player.add_card((taken_card.color, taken_card.number))
 
         self.turn_state['has_taken'] = True
         self.turn_state['waiting_for_take'] = False
         self.showing_player_select_buttons = False
         self.player_select_buttons.clear()
 
-        self.message = f"{self.current_player.name} took {taken_card[0]} {taken_card[1]} from {target_player.name}"
+        self.message = f"{self.current_player.name} took {taken_card.color} {taken_card.number} from {target_player.name}"
 
         if len(target_player.hand) == 0:
             self.game_phase = GamePhase.GAME_OVER
@@ -648,9 +648,7 @@ class Game:
             self.message = "No cards selected"
             return
 
-        selected_cards = [self.current_player.hand[i] for i in self.selected_cards]
-        collection = CollectionOfCards(selected_cards)
-
+        collection = CollectionOfCards([(card.color, card.number) for card in self.selected_cards])
         if not collection.is_valid_group():
             self.message = "Not a valid group"
             return
@@ -662,13 +660,13 @@ class Game:
 
         # Store original positions for animation
         original_positions = []
-        for i in self.selected_cards:
-            card = self.current_player.cards[i]
+        for card in self.selected_cards:
             original_positions.append((card.rect.x, card.rect.y))
 
         # Animation loop
-        for card_index, i in enumerate(self.selected_cards):
-            card = self.current_player.cards[i]
+        for card_index, card in enumerate(self.selected_cards):
+            self.current_player.remove_card(card)
+
             start_pos = (card.rect.x, card.rect.y)
             target_pos = (self.deck_area.x + min(5, len(self.deck)) * 2, 
                          self.deck_area.y + min(5, len(self.deck)) * 2)
@@ -725,16 +723,16 @@ class Game:
                 pygame.display.flip()
                 self.clock.tick(self.FPS)
 
+            self.deck.append((card.color, card.number))
+
+            card.update()
+
         # After animations complete, update game state
-        for card in selected_cards:
-            self.current_player.remove_card(card)
-            self.deck.append(card)
         random.shuffle(self.deck)
 
         # Clear selection states
         self.selected_cards = []
         self.current_player.clear_selections()
-
         self.message = "Group discarded"
 
         if len(self.current_player.hand) == 0:
@@ -800,19 +798,20 @@ class Game:
         if not self.selected_cards:
             return
 
-        selected_cards = [self.current_player.hand[i] for i in self.selected_cards]
-        collection = CollectionOfCards(selected_cards)
+        collection = CollectionOfCards([(card.color, card.number) for card in self.selected_cards])
         is_valid = collection.is_valid_group()
 
-        # Update all selected cards to show the same border color
-        for i, card in enumerate(self.current_player.cards):
-            if i in self.selected_cards:
+        for card in self.current_player.cards:
+            if card in self.selected_cards:
                 if is_valid:
                     card.selected = True
                     card.invalid = False
                 else:
                     card.selected = False
                     card.invalid = True
+            else:
+                card.selected = False
+                card.invalid = False
 
 
     def computer_turn(self):
@@ -872,11 +871,11 @@ class Game:
         self.update_screen()
         pygame.time.wait(1500)
 
-        if target_player.hand:
-            taken_card = random.choice(target_player.hand)
+        if target_player.cards:
+            taken_card = random.choice(target_player.cards)
             target_player.remove_card(taken_card)
-            self.current_player.add_card(taken_card)
-            self.message = f"{self.current_player.name} took {taken_card[0]} {taken_card[1]} from {target_player.name}"
+            self.current_player.add_card((taken_card.color, taken_card.number))
+            self.message = f"{self.current_player.name} took {taken_card.color} {taken_card.number} from {target_player.name}"
             self.update_screen()
             pygame.time.wait(2000)
 
@@ -1068,22 +1067,86 @@ class Game:
             self.update_screen()
             pygame.time.wait(1000)  # Show the highlighted cards for a moment
 
+            card_tuple_set = set()
+
             # Store the cards that will be discarded
             cards_to_remove = []
             for card in self.current_player.cards:
-                if (card.color, card.number) in largest_group:
+                if (card.color, card.number) in largest_group and (card.color, card.number) not in card_tuple_set:
                     cards_to_remove.append(card)
+                    card_tuple_set.add((card.color, card.number))
 
-            # First remove the cards
-            for card in cards_to_remove:
-                self.current_player.remove_card((card.color, card.number))
-                self.deck.append((card.color, card.number))
+            cards_to_remove = sorted(cards_to_remove, key=lambda card: (card.number, card.color))
+
+            # Animation constants
+            RISE_FRAMES = 15
+            FLIGHT_FRAMES = 30
+            CARDS_DELAY = 5
+
+            # Animation loop for each card
+            for card_index, card in enumerate(cards_to_remove):
+                # Remove card (original logic)
+                removed_card = self.current_player.remove_card(card)
+                start_pos = (card.rect.x, card.rect.y)
+                target_pos = (self.deck_area.x + min(5, len(self.deck)) * 2, 
+                             self.deck_area.y + min(5, len(self.deck)) * 2)
+
+                # Wait before starting each card's animation
+                for _ in range(card_index * CARDS_DELAY):
+                    self.update_screen()
+                    self.clock.tick(self.FPS)
+
+                # Step 1: Rise animation
+                for frame in range(RISE_FRAMES):
+                    self.screen.fill(self.BACKGROUND_COLOR)
+                    self.screen.blit(self.background, (0, 0))
+                    
+                    rise_progress = frame / RISE_FRAMES
+                    rise_height = -50
+                    current_y = start_pos[1] + rise_height * rise_progress
+                    
+                    self.game_screen()
+                    self.screen.blit(card.image, (start_pos[0], current_y))
+                    
+                    pygame.display.flip()
+                    self.clock.tick(self.FPS)
+
+                # Step 2 & 3: Flight and flip animation
+                for frame in range(FLIGHT_FRAMES):
+                    self.screen.fill(self.BACKGROUND_COLOR)
+                    self.screen.blit(self.background, (0, 0))
+                    
+                    flight_progress = frame / FLIGHT_FRAMES
+                    smooth_progress = (1 - (1 - flight_progress) * (1 - flight_progress))
+                    current_x = start_pos[0] + (target_pos[0] - start_pos[0]) * smooth_progress
+                    current_y = start_pos[1] + rise_height + (target_pos[1] - (start_pos[1] + rise_height)) * smooth_progress
+                    
+                    if flight_progress < 0.5:
+                        width = int(self.CARD_WIDTH * (1 - flight_progress * 2))
+                        if width > 0:
+                            scaled_card = pygame.transform.scale(card.image, (width, self.CARD_HEIGHT))
+                            self.screen.blit(scaled_card, (current_x + (self.CARD_WIDTH - width) // 2, current_y))
+                    else:
+                        width = int(self.CARD_WIDTH * ((flight_progress - 0.5) * 2))
+                        if width > 0:
+                            scaled_card = pygame.transform.scale(self.card_back, (width, self.CARD_HEIGHT))
+                            self.screen.blit(scaled_card, (current_x + (self.CARD_WIDTH - width) // 2, current_y))
+                    
+                    self.game_screen()
+                    pygame.display.flip()
+                    self.clock.tick(self.FPS)
+
+                # Add card to deck (original logic)
+                self.deck.append((removed_card.color, removed_card.number))
+                card.update()
+
+            # Original logic continues
             random.shuffle(self.deck)
             
-            # Update message
+            # Update message (original logic)
             self.message = f"{self.current_player.name} discarded group: {', '.join(f'{card[0]} {card[1]}' for card in largest_group)}"
             
-            # Wait for the remaining cards to animate to their new positions
+            # Wait for the remaining cards to animate to their new positions (original logic)
             animation_frames = 0
             max_animation_frames = 30
             
@@ -1102,6 +1165,11 @@ class Game:
                 self.message = f"{self.current_player.name} wins!"
                 self.update_screen()
                 self.show_game_over_popup(self.current_player.name)
+            else:
+                while self.check_and_display_valid_groups():
+                    self.computer_discard()
+                    self.update_screen()
+                    pygame.time.wait(1000)  
 
     def highlight_computer_valid_groups(self, cards_to_highlight: List[Tuple[str, int]]):
         if not cards_to_highlight:
@@ -1111,13 +1179,17 @@ class Game:
         for card in self.current_player.cards:
             card.selected = False
 
+        card_tuple_set = set()
+
         # Highlight the cards that form valid groups
         for card in self.current_player.cards:
-            if (card.color, card.number) in cards_to_highlight:
+            if (card.color, card.number) in cards_to_highlight and (card.color, card.number) not in card_tuple_set:
                 card.selected = True
+                card_tuple_set.add((card.color, card.number))
 
         pygame.display.flip()
         pygame.time.wait(1000)
+
         
 
     def update_screen(self):
