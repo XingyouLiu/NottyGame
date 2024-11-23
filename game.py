@@ -83,7 +83,9 @@ class Game:
             self.clock,
             self.card_back,
             self.background,
-            self.BACKGROUND_COLOR
+            self.BACKGROUND_COLOR,
+            self.CARD_WIDTH,
+            self.CARD_HEIGHT
         )
 
         # Initialize deck with Card objects
@@ -405,6 +407,9 @@ class Game:
                 break
 
     def click_in_game(self, pos: Tuple[int, int]):
+        if not self.current_player.is_human:
+            return
+
         if self.showing_player_select_buttons:
             for player_name, button_rect in self.player_select_buttons.items():
                 if button_rect.collidepoint(pos):
@@ -459,11 +464,28 @@ class Game:
                     if card in self.selected_cards:
                         self.selected_cards.remove(card)
                         card.selected = False
+                        card.invalid = False  
                     else:
                         self.selected_cards.append(card)
                         card.selected = True
+                    self.highlight_human_valid_groups()  
                 else:
                     self.message = "No valid groups to discard"
+                break
+            
+
+    def card_hover(self, pos: Tuple[int, int]):
+        if not self.current_player or not self.current_player.is_human:
+            return
+
+        # Reset hover state for all cards
+        for card in self.current_player.cards:
+            card.hover = False
+
+        # Check for hover on current player's cards
+        for card in self.current_player.cards:
+            if card.contains_point(pos):
+                card.hover = True
                 break
 
 
@@ -482,43 +504,19 @@ class Game:
 
         card = self.deck.pop()
         
-        # Animate card moving from deck to temp area
-        animation_frames = 0
-        max_frames = 30
-        target_x = self.temp_draw_area.x + self.turn_state['cards_drawn_count'] * 20  # 计算目标位置
-        target_y = self.temp_draw_area.y + self.turn_state['cards_drawn_count'] * 2
+        start_pos = (self.deck_area.x + min(5, len(self.deck)) * 2,
+                self.deck_area.y + min(5, len(self.deck)) * 2)
+        target_pos = (self.temp_draw_area.x + self.turn_state['cards_drawn_count'] * 20,
+                     self.temp_draw_area.y + self.turn_state['cards_drawn_count'] * 2)
         
-        start_x = self.deck_area.x + min(5, len(self.deck)) * 2  # 从deck最上面的牌的位置开始
-        start_y = self.deck_area.y + min(5, len(self.deck)) * 2
-        
-        while animation_frames < max_frames:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            
-            # 使用平滑的缓动函数
-            progress = animation_frames / max_frames
-            smooth_progress = (1 - (1 - progress) * (1 - progress))
-            
-            current_x = start_x + (target_x - start_x) * smooth_progress
-            current_y = start_y + (target_y - start_y) * smooth_progress
-            
-            # 先绘制游戏状态（不包括正在移动的牌）
-            self.game_screen()
-            
-            # 绘制移动中的牌
-            self.screen.blit(self.card_back, (int(current_x), int(current_y)))
-            
-            pygame.display.flip()
-            animation_frames += 1
-            self.clock.tick(60)
+        self.card_animation.draw_to_temp_draw_area(start_pos, target_pos, self.game_screen)
 
-        # 动画完成后才更新游戏状态
         self.turn_state['drawn_cards'].append(card)
         self.turn_state['is_drawing'] = True
         self.turn_state['cards_drawn_count'] += 1
         self.turn_state['has_drawn'] = True
+        
         self.message = f"{self.current_player.name} has drew {self.turn_state['cards_drawn_count']} cards"
-
         if self.turn_state['cards_drawn_count'] == 3:
             self.message += " (reached maximum draw limit 3 for this turn)"
         else:
@@ -529,125 +527,59 @@ class Game:
             self.message = "Cannot finish drawing - not currently drawing"
             return
 
-        # Flip animation for all drawn cards
-        animation_frames = 0
-        while animation_frames < 20:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * 30
-                y = self.temp_draw_area.y
-                
-                progress = animation_frames / 20
-                if progress < 0.5:
-                    width = int(60 * (1 - progress * 2))
-                    if width > 0:
-                        scaled_back = pygame.transform.scale(self.card_back, (width, 100))
-                        self.screen.blit(scaled_back, (x + (60 - width) // 2, y))
-                else:
-                    width = int(60 * ((progress - 0.5) * 2))
-                    if width > 0:
-                        scaled_front = pygame.transform.scale(card.image, (width, 100))
-                        self.screen.blit(scaled_front, (x + (60 - width) // 2, y))
-            
-            pygame.display.flip()
-            animation_frames += 1
-            self.clock.tick(self.FPS)
-
-        # 展开动画：从堆叠状态展开成一字排开
-        animation_frames = 0
-        initial_spacing = 20
-        final_spacing = 70
-        while animation_frames < 30:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            progress = animation_frames / 30
-            current_spacing = initial_spacing + (final_spacing - initial_spacing) * progress
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * current_spacing
-                y = self.temp_draw_area.y
-                self.screen.blit(card.image, (x, y))
-            
-            pygame.display.flip()
-            animation_frames += 1
-            self.clock.tick(self.FPS)
-
-        # 显示最终排列并等待
+        temp_area_pos = (self.temp_draw_area.x, self.temp_draw_area.y)
+        hand_pos = (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y)
+        
+        # Flip animation
+        card_positions = [(temp_area_pos[0] + i * 30, temp_area_pos[1]) 
+                         for i in range(len(self.turn_state['drawn_cards']))]
+        self.card_animation.flip_cards_animation(
+            self.turn_state['drawn_cards'],
+            card_positions,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
+        
+        # Spread animation
+        self.card_animation.spread_cards_animation(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, 20, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
+        
+        # Display cards
         self.message = f"{self.current_player.name} finished drawing cards"
         self.message += f"\nHas drew: {', '.join(f'{card.color} {card.number}' for card in self.turn_state['drawn_cards'])}"
-        
-        display_time = 0
-        while display_time < 120:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * final_spacing
-                y = self.temp_draw_area.y
-                self.screen.blit(card.image, (x, y))
-                
-            pygame.display.flip()
-            display_time += 1
-            self.clock.tick(self.FPS)
 
-        # 添加到手牌的动画
-        animation_frames = 0
-        max_frames = 45
+        self.turn_state['is_drawing'] = False
         
-        self.turn_state['is_drawing'] = False  # 暂时设置为False以防止绘制临时区域的卡牌
-
-        # 设置临时展示区位置（玩家手牌区域最左侧）
-        temp_display_x = self.CARD_LEFT_MARGIN
-        temp_display_y = self.current_player.cards[0].rect.y  # 当前玩家手牌的y位置
-
-        self.turn_state['is_drawing'] = False  # 暂时设置为False以防止绘制临时区域的卡牌
+        self.card_animation.display_cards_temporarily(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
         
-        # 移动到临时展示区的动画
-        MOVE_FRAMES = 20
-        for frame in range(MOVE_FRAMES):
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            progress = frame / MOVE_FRAMES
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                # 计算每张卡片的起始位置
-                original_x = self.temp_draw_area.x + i * final_spacing
-                original_y = self.temp_draw_area.y
-                
-                # 计算当前位置
-                current_x = original_x + (temp_display_x - original_x) * progress
-                current_y = original_y + (temp_display_y - original_y) * progress
-                
-                # 显示移动中的卡片
-                self.screen.blit(card.image, (int(current_x), int(current_y)))
-            
-            pygame.display.flip()
-            self.clock.tick(self.FPS)
+        # Move to hand animation
+        self.card_animation.move_to_temp_display_area(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, hand_pos, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
         
-        # 在临时展示区显示1秒
-        start_time = pygame.time.get_ticks()
-        while pygame.time.get_ticks() - start_time < 1000:  # 1000ms = 1秒
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            # 在临时展示区显示所有抽到的卡片
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                self.screen.blit(card.image, (temp_display_x + i * 20, temp_display_y))
-            
-            pygame.display.flip()
-            self.clock.tick(self.FPS)
+        # Show in temporary area
+        self.card_animation.show_in_temp_display_area(
+            self.turn_state['drawn_cards'],
+            (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y),
+            20,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
 
+        # Add cards to hand
         for card in self.turn_state['drawn_cards']:
             self.current_player.add_card(card)
         
+        # Final animation for card positioning
+        animation_frames = 0
+        max_frames = 45
         while animation_frames < max_frames:
             self.screen.fill(self.BACKGROUND_COLOR)
             self.screen.blit(self.background, (0, 0))
@@ -660,8 +592,6 @@ class Game:
             animation_frames += 1
             self.clock.tick(40)
 
-        # 恢复turn_state的状态
-        self.turn_state['is_drawing'] = False
         self.turn_state['is_finished_drawing'] = True
         self.turn_state['drawn_cards'] = []
         
@@ -832,7 +762,7 @@ class Game:
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     self.click_card(event.pos)
                 elif event.type == pygame.MOUSEMOTION:
-                    self.handle_card_hover(event.pos)
+                    self.card_hover(event.pos)
             
             # 更新显示
             self.update_screen()
@@ -933,8 +863,8 @@ class Game:
 
         # Animation loop
         for card_index, card in enumerate(self.selected_cards):
+            # Remove card (original logic)
             self.current_player.remove_card(card)
-
             start_pos = (card.rect.x, card.rect.y)
             target_pos = (self.deck_area.x + min(5, len(self.deck)) * 2, 
                          self.deck_area.y + min(5, len(self.deck)) * 2)
@@ -1070,6 +1000,9 @@ class Game:
 
     def highlight_human_valid_groups(self):
         if not self.selected_cards:
+            for card in self.current_player.cards:
+                card.invalid = False
+                card.update()
             return
 
         collection = CollectionOfCards(self.selected_cards)
@@ -1077,14 +1010,8 @@ class Game:
 
         for card in self.current_player.cards:
             if card in self.selected_cards:
-                if is_valid:
-                    card.selected = True
-                    card.invalid = False
-                else:
-                    card.selected = False
-                    card.invalid = True
+                card.invalid = not is_valid
             else:
-                card.selected = False
                 card.invalid = False
             card.update()
 
@@ -1355,13 +1282,12 @@ class Game:
 
         self.update_screen()
 
-
     def computer_draw(self, draw_count: int):
         self.message = f"{self.current_player.name} decided to draw from deck"
         self.update_screen()
         pygame.time.wait(1500)
 
-        for i in range(draw_count):
+        for _ in range(draw_count):
             if len(self.current_player.cards) >= 20:
                 self.message = f"{self.current_player.name} has reached maximum hand size"
                 self.update_screen()
@@ -1369,31 +1295,14 @@ class Game:
 
             card = self.deck.pop()
             
-            # Animate card moving from deck to temp area
-            animation_frames = 0
-            max_frames = 30
-            target_x = self.temp_draw_area.x + self.turn_state['cards_drawn_count'] * 20
-            target_y = self.temp_draw_area.y + self.turn_state['cards_drawn_count'] * 2
+            # 计算起始和目标位置
+            start_pos = (self.deck_area.x + min(5, len(self.deck)) * 2,
+                        self.deck_area.y + min(5, len(self.deck)) * 2)
+            target_pos = (self.temp_draw_area.x + self.turn_state['cards_drawn_count'] * 20,
+                         self.temp_draw_area.y + self.turn_state['cards_drawn_count'] * 2)
             
-            start_x = self.deck_area.x + min(5, len(self.deck)) * 2
-            start_y = self.deck_area.y + min(5, len(self.deck)) * 2
-            
-            while animation_frames < max_frames:
-                self.screen.fill(self.BACKGROUND_COLOR)
-                self.screen.blit(self.background, (0, 0))
-                
-                progress = animation_frames / max_frames
-                smooth_progress = (1 - (1 - progress) * (1 - progress))
-                
-                current_x = start_x + (target_x - start_x) * smooth_progress
-                current_y = start_y + (target_y - start_y) * smooth_progress
-                
-                self.game_screen()
-                self.screen.blit(self.card_back, (int(current_x), int(current_y)))
-                
-                pygame.display.flip()
-                animation_frames += 1
-                self.clock.tick(60)
+            # 移动卡片动画
+            self.card_animation.draw_to_temp_draw_area(start_pos, target_pos, self.game_screen)
 
             self.turn_state['drawn_cards'].append(card)
             self.turn_state['cards_drawn_count'] += 1
@@ -1407,125 +1316,58 @@ class Game:
                 self.message += f" ({3 - self.turn_state['cards_drawn_count']} draws remaining)"
             pygame.time.wait(500)
 
-        # Flip animation for all drawn cards
-        animation_frames = 0
-        while animation_frames < 20:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * 30
-                y = self.temp_draw_area.y
-                
-                progress = animation_frames / 20
-                if progress < 0.5:
-                    width = int(60 * (1 - progress * 2))
-                    if width > 0:
-                        scaled_back = pygame.transform.scale(self.card_back, (width, 100))
-                        self.screen.blit(scaled_back, (x + (60 - width) // 2, y))
-                else:
-                    width = int(60 * ((progress - 0.5) * 2))
-                    if width > 0:
-                        scaled_front = pygame.transform.scale(card.image, (width, 100))
-                        self.screen.blit(scaled_front, (x + (60 - width) // 2, y))
-            
-            pygame.display.flip()
-            animation_frames += 1
-            self.clock.tick(self.FPS)
+        # 翻牌动画
+        temp_area_pos = (self.temp_draw_area.x, self.temp_draw_area.y)
+        card_positions = [(temp_area_pos[0] + i * 30, temp_area_pos[1]) 
+                         for i in range(len(self.turn_state['drawn_cards']))]
+        self.card_animation.flip_cards_animation(
+            self.turn_state['drawn_cards'],
+            card_positions,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
 
-        # 展开动画：从堆叠状态展开成一字排开
-        animation_frames = 0
-        initial_spacing = 20
-        final_spacing = 70
-        while animation_frames < 30:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            progress = animation_frames / 30
-            current_spacing = initial_spacing + (final_spacing - initial_spacing) * progress
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * current_spacing
-                y = self.temp_draw_area.y
-                self.screen.blit(card.image, (x, y))
-            
-            pygame.display.flip()
-            animation_frames += 1
-            self.clock.tick(self.FPS)
+        # 展开动画
+        self.card_animation.spread_cards_animation(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, 20, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
 
-        # 显示最终排列并等待
+        # 显示抽到的牌
         self.message = f"{self.current_player.name} finished drawing cards"
         self.message += f"\nHas drew: {', '.join(f'{card.color} {card.number}' for card in self.turn_state['drawn_cards'])}"
-        
-        display_time = 0
-        while display_time < 120:
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                x = self.temp_draw_area.x + i * final_spacing
-                y = self.temp_draw_area.y
-                self.screen.blit(card.image, (x, y))
-                
-            pygame.display.flip()
-            display_time += 1
-            self.clock.tick(self.FPS)
 
-        # 添加到手牌的动画
-        animation_frames = 0
-        max_frames = 45
+        self.turn_state['is_drawing'] = False
         
-        self.turn_state['is_drawing'] = False  # 暂时设置为False以防止绘制临时区域的卡牌
+        self.card_animation.display_cards_temporarily(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
 
-        temp_display_x = self.CARD_LEFT_MARGIN
-        temp_display_y = self.current_player.cards[0].rect.y  # 当前玩家手牌的y位置
-
-        self.turn_state['is_drawing'] = False  # 暂时设置为False以防止绘制临时区域的卡牌
+        # 移动到手牌区域
+        hand_pos = (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y)
+        self.card_animation.move_to_temp_display_area(
+            self.turn_state['drawn_cards'],
+            temp_area_pos, hand_pos, 70,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
         
-        # 移动到临时展示区的动画
-        MOVE_FRAMES = 20
-        for frame in range(MOVE_FRAMES):
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            progress = frame / MOVE_FRAMES
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                # 计算每张卡片的起始位置
-                original_x = self.temp_draw_area.x + i * final_spacing
-                original_y = self.temp_draw_area.y
-                
-                # 计算当前位置
-                current_x = original_x + (temp_display_x - original_x) * progress
-                current_y = original_y + (temp_display_y - original_y) * progress
-                
-                # 显示移动中的卡片
-                self.screen.blit(card.image, (int(current_x), int(current_y)))
-            
-            pygame.display.flip()
-            self.clock.tick(self.FPS)
-        
-        # 在临时展示区显示1秒
-        start_time = pygame.time.get_ticks()
-        while pygame.time.get_ticks() - start_time < 1000:  # 1000ms = 1秒
-            self.screen.fill(self.BACKGROUND_COLOR)
-            self.screen.blit(self.background, (0, 0))
-            self.game_screen(draw_temp_cards=False)
-            
-            # 在临时展示区显示所有抽到的卡片
-            for i, card in enumerate(self.turn_state['drawn_cards']):
-                self.screen.blit(card.image, (temp_display_x + i * 20, temp_display_y))
-            
-            pygame.display.flip()
-            self.clock.tick(self.FPS)
+        # 在临时区域显示
+        self.card_animation.show_in_temp_display_area(
+            self.turn_state['drawn_cards'],
+            (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y),
+            20,
+            lambda: self.game_screen(draw_temp_cards=False)
+        )
         
         # 添加卡牌到手牌
         for card in self.turn_state['drawn_cards']:
             self.current_player.add_card(card)
         
+        # 最终的手牌位置调整动画
+        animation_frames = 0
+        max_frames = 45
         while animation_frames < max_frames:
             self.screen.fill(self.BACKGROUND_COLOR)
             self.screen.blit(self.background, (0, 0))
@@ -1538,7 +1380,6 @@ class Game:
             animation_frames += 1
             self.clock.tick(40)
 
-        self.turn_state['is_drawing'] = False
         self.turn_state['drawn_cards'] = []
 
         while self.check_and_display_valid_groups():
@@ -1721,7 +1562,7 @@ class Game:
                         self.click_in_game(event.pos)
                 elif event.type == pygame.MOUSEMOTION:  
                     if self.game_phase == GamePhase.PLAYER_TURN:
-                        self.handle_card_hover(event.pos)
+                        self.card_hover(event.pos)
 
             self.screen.fill(self.BACKGROUND_COLOR)
             self.screen.blit(self.background, (0, 0))
@@ -1737,21 +1578,6 @@ class Game:
             self.clock.tick(self.FPS)
 
         pygame.quit()
-
-    def handle_card_hover(self, pos: Tuple[int, int]):
-        """Handle mouse hover over cards"""
-        if not self.current_player or not self.current_player.is_human:
-            return
-
-        # Reset hover state for all cards
-        for card in self.current_player.cards:
-            card.hover = False
-
-        # Check for hover on current player's cards
-        for card in self.current_player.cards:
-            if card.contains_point(pos):
-                card.hover = True
-                break
 
 
 if __name__ == "__main__":
