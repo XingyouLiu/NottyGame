@@ -64,6 +64,7 @@ class Card:
                 pygame.draw.rect(self.image, (0, 255, 0), (0, 0, self.card_width, self.card_height), 3)
         elif self.hover:  
             pygame.draw.rect(self.image, (255, 255, 0), (0, 0, self.card_width, self.card_height), 2)
+            
     
     def set_position(self, x: int, y: int, animate: bool = False):
         if animate:
