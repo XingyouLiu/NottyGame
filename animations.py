@@ -1,3 +1,4 @@
+from player import Player
 import pygame
 from card import Card
 import random
@@ -17,65 +18,73 @@ class CardAnimation:
         self.card_width = card_width
         self.card_height = card_height
 
-    def shuffle_animation(self, deck_area: pygame.Rect, card_width: int, card_height: int, 
-                         redraw_game_screen=None):
-        """Deck shuffling animation"""
-        ANIMATION_FRAMES = 30
-        CARDS_PER_ANIMATION = 5
-        SHUFFLE_ROUNDS = 2
-        
-        deck_x = deck_area.x
-        deck_y = deck_area.y
-        
-        for _ in range(SHUFFLE_ROUNDS):
-            self._split_deck_animation(deck_x, deck_y, ANIMATION_FRAMES, redraw_game_screen)
-            self._merge_deck_animation(deck_x, deck_y, ANIMATION_FRAMES, redraw_game_screen)
+
+    def shuffle_animation(self, deck_area: pygame.Rect, redraw_game_screen=None, num_cards: int = 20, rounds: int = 2):
+        """Cards shuffling animation"""
+        for _ in range(rounds):
+            self._split_cards_animation(deck_area.x, deck_area.y, 30, num_cards, None, redraw_game_screen)
+            self._merge_cards_animation(deck_area.x, deck_area.y, 30, num_cards, None, redraw_game_screen)
 
 
-    def _split_deck_animation(self, deck_x: int, deck_y: int, frames: int, redraw_game_screen=None):
-        """Deck splitting during shuffling"""
+    def _split_cards_animation(self, center_x: int, center_y: int, frames: int, 
+                         num_cards: int, target_player=None, redraw_game_screen=None):
+        """Cards splitting during shuffling"""
         for frame in range(frames):
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
             
-            if redraw_game_screen:
+            if target_player and redraw_game_screen:
+                temp_cards = target_player.cards.copy()
+                target_player.cards = []
+                redraw_game_screen()
+                target_player.cards = temp_cards
+            elif redraw_game_screen:
                 redraw_game_screen()
             
             progress = frame / frames
             offset = int(50 * progress)
             
-            for i in range(10):
-                x = deck_x - offset + i * 2
-                y = deck_y + i * 2
+            # Left pile
+            for i in range(num_cards // 2):
+                x = center_x - offset - (num_cards // 4 - i) * 2
+                y = center_y + i * 2
                 self.screen.blit(self.card_back, (x, y))
             
-            for i in range(10):
-                x = deck_x + offset + i * 2
-                y = deck_y + i * 2
+            # Right pile
+            for i in range(num_cards // 2, num_cards):
+                x = center_x + offset + (i - num_cards // 2) * 2
+                y = center_y + (i - num_cards // 2) * 2
                 self.screen.blit(self.card_back, (x, y))
             
             pygame.display.flip()
             self.clock.tick(self.FPS)
 
-    def _merge_deck_animation(self, deck_x: int, deck_y: int, frames: int, redraw_game_screen=None):
-        """Deck merging during shuffling"""
+
+    def _merge_cards_animation(self, center_x: int, center_y: int, frames: int, 
+                         num_cards: int, target_player=None, redraw_game_screen=None):
+        """Cards merging during shuffling"""
         for frame in range(frames):
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
             
-            if redraw_game_screen:
+            if target_player and redraw_game_screen:
+                temp_cards = target_player.cards.copy()
+                target_player.cards = []
+                redraw_game_screen()
+                target_player.cards = temp_cards
+            elif redraw_game_screen:
                 redraw_game_screen()
             
             progress = frame / frames
             offset = int(50 * (1 - progress))
             
-            for i in range(10):
-                x = deck_x - offset + int(offset * 2 * progress) + i * 2
-                y = deck_y + i * 2 + int(10 * (1 - progress))
-                self.screen.blit(self.card_back, (x, y))
-                
-                x = deck_x + offset - int(offset * 2 * progress) + i * 2
-                y = deck_y + i * 2 - int(10 * (1 - progress))
+            for i in range(num_cards):
+                if i % 2 == 0:
+                    x = center_x - offset + int(offset * 2 * progress) + i * 2
+                    y = center_y + i * 2 + int(10 * (1 - progress))
+                else:
+                    x = center_x + offset - int(offset * 2 * progress) + i * 2
+                    y = center_y + i * 2 - int(10 * (1 - progress))
                 self.screen.blit(self.card_back, (x, y))
             
             pygame.display.flip()
@@ -103,7 +112,8 @@ class CardAnimation:
             
             pygame.display.flip()
             animation_frames += 1
-            self.clock.tick(60)
+            self.clock.tick(self.FPS)
+
 
     def flip_cards_animation(self, cards: List[Card], positions: List[Tuple[int, int]], 
                            redraw_game_screen) -> None:
@@ -132,6 +142,7 @@ class CardAnimation:
             animation_frames += 1
             self.clock.tick(self.FPS)
 
+
     def spread_cards_animation(self, cards: List[Card], start_pos: Tuple[int, int],
                              initial_spacing: int, final_spacing: int,
                              redraw_game_screen) -> None:
@@ -154,6 +165,7 @@ class CardAnimation:
             animation_frames += 1
             self.clock.tick(self.FPS)
 
+
     def display_cards_temporarily(self, cards: List[Card], position: Tuple[int, int],
                                 spacing: int, redraw_game_screen) -> None:
         """Display cards drawed temporarily in temporary draw area after spreading"""
@@ -171,6 +183,7 @@ class CardAnimation:
             pygame.display.flip()
             display_time += 1
             self.clock.tick(self.FPS)
+
 
     def move_to_temp_display_area(self, cards: List[Card], start_pos: Tuple[int, int],
                              target_pos: Tuple[int, int], spacing: int,
@@ -195,6 +208,7 @@ class CardAnimation:
             pygame.display.flip()
             self.clock.tick(self.FPS)
 
+
     def show_in_temp_display_area(self, cards: List[Card], position: Tuple[int, int],
                          spacing: int, redraw_game_screen) -> None:
         """Show cards drawed temporarily in temporary display area, before actually adding to player's hand"""
@@ -211,6 +225,117 @@ class CardAnimation:
             self.clock.tick(self.FPS)
 
     
+    def flip_player_cards_to_back(self, target_player: Player, redraw_game_screen) -> None:
+        """Flip cards to back in target player's hand"""
+        animation_frames = 0
+        while animation_frames < 20:
+            self.screen.fill(self.background_color)
+            self.screen.blit(self.background, (0, 0))
+
+            target_cards = target_player.cards.copy()
+            target_player.cards = []  
+
+            redraw_game_screen()
+
+            target_player.cards = target_cards
+
+            progress = animation_frames / 20
+            for card in target_cards:
+                original_x = card.rect.x
+                original_y = card.rect.y
+                
+                if progress < 0.5:
+                    width = int(self.card_width * (1 - progress * 2))
+                    if width > 0:
+                        scaled_card = pygame.transform.scale(card.image, (width, self.card_height))
+                        self.screen.blit(scaled_card, 
+                                    (original_x + (self.card_width - width) // 2, 
+                                        original_y))
+                else:
+                    width = int(self.card_width * ((progress - 0.5) * 2))
+                    if width > 0:
+                        scaled_back = pygame.transform.scale(self.card_back, (width, self.card_height))
+                        self.screen.blit(scaled_back, 
+                                    (original_x + (self.card_width - width) // 2, 
+                                        original_y))
+            
+            pygame.display.flip()
+            animation_frames += 1
+            self.clock.tick(self.FPS)
+            
+
+    def shuffle_in_player_hand(self, target_player: Player, center_pos: Tuple[int, int], 
+                        redraw_game_screen) -> None:
+        """Shuffling animation for cards in player's hand"""
+        center_x, center_y = center_pos
+        num_cards = len(target_player.cards)
+        
+        for _ in range(2):  
+            self._split_cards_animation(center_x, center_y, 15, num_cards, 
+                                      target_player, redraw_game_screen)
+            self._merge_cards_animation(center_x, center_y, 20, num_cards, 
+                                      target_player, redraw_game_screen)
+
+
+    def reveal_selected_card(self, card: Card, redraw_game_screen) -> None:
+        """Revealing a selected card"""
+        card.selected = True
+        redraw_game_screen()
+        pygame.display.flip()
+        pygame.time.wait(500)
+        
+        card.face_down = False
+        redraw_game_screen()
+        pygame.display.flip()
+        pygame.time.wait(500)
+
+    
+    def discard_card_animation(self, card: Card, start_pos: Tuple[int, int], 
+                         target_pos: Tuple[int, int], redraw_game_screen) -> None:
+        """Single card discard animation including rise, flight and flip"""
+        # Rise animation
+        RISE_FRAMES = 15
+        RISE_HEIGHT = -50
+        
+        for frame in range(RISE_FRAMES):
+            self.screen.fill(self.background_color)
+            self.screen.blit(self.background, (0, 0))
+            
+            rise_progress = frame / RISE_FRAMES
+            current_y = start_pos[1] + RISE_HEIGHT * rise_progress
+            
+            redraw_game_screen()
+            self.screen.blit(card.image, (start_pos[0], current_y))
+            
+            pygame.display.flip()
+            self.clock.tick(self.FPS)
+
+        # Flight and flip animation
+        FLIGHT_FRAMES = 30
+        for frame in range(FLIGHT_FRAMES):
+            self.screen.fill(self.background_color)
+            self.screen.blit(self.background, (0, 0))
+            
+            flight_progress = frame / FLIGHT_FRAMES
+            smooth_progress = (1 - (1 - flight_progress) * (1 - flight_progress))
+            current_x = start_pos[0] + (target_pos[0] - start_pos[0]) * smooth_progress
+            current_y = start_pos[1] + RISE_HEIGHT + (target_pos[1] - (start_pos[1] + RISE_HEIGHT)) * smooth_progress
+            
+            if flight_progress < 0.5:
+                width = int(self.card_width * (1 - flight_progress * 2))
+                if width > 0:
+                    scaled_card = pygame.transform.scale(card.image, (width, self.card_height))
+                    self.screen.blit(scaled_card, (current_x + (self.card_width - width) // 2, current_y))
+            else:
+                width = int(self.card_width * ((flight_progress - 0.5) * 2))
+                if width > 0:
+                    scaled_card = pygame.transform.scale(self.card_back, (width, self.card_height))
+                    self.screen.blit(scaled_card, (current_x + (self.card_width - width) // 2, current_y))
+            
+            redraw_game_screen()
+            pygame.display.flip()
+            self.clock.tick(self.FPS)
+
 
 
 class UIAnimations:
@@ -220,7 +345,3 @@ class UIAnimations:
     def button_hover_animation(self, button_rect: pygame.Rect):
         """按钮悬停效果"""
         pass
-        
-    def message_fade_animation(self, message: str, pos: Tuple[int, int]):
-        """消息淡入淡出效果"""
-        pass 
