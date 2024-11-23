@@ -1,8 +1,10 @@
+from itertools import combinations
 from typing import List, Tuple, Dict, Set, Optional
+from card import Card
 
 class CollectionOfCards:
-    def __init__(self, cards_list: List[Tuple[str, int]]) -> None:
-        self.collection = cards_list
+    def __init__(self, cards: List[Card]) -> None:
+        self.collection = cards
 
 
     def is_valid_group(self) -> bool:
@@ -14,8 +16,8 @@ class CollectionOfCards:
         numbers_list = []
         colours_list = []
         for card in self.collection:
-            numbers_list.append(card[1])
-            colours_list.append(card[0])
+            numbers_list.append(card.number)
+            colours_list.append(card.color)
         numbers_set, colours_set = set(numbers_list), set(colours_list)
 
         if len(colours_set) == 1 and len(numbers_set) >= 3 and len(numbers_list) == len(numbers_set):
@@ -37,7 +39,7 @@ class CollectionOfCards:
         colour_number_dict: Dict[str, List[int]] = {}
         number_colour_dict: Dict[int, Set[str]] = {}
         for card in self.collection:
-            colour, number = card[0], card[1]
+            colour, number = card.color, card.number
             if colour not in colour_number_dict:
                 colour_number_dict[colour] = [number]
             else:
@@ -70,14 +72,14 @@ class CollectionOfCards:
         return False
     
 
-    def largest_valid_group(self) -> Optional[List[Tuple[str, int]]]:
-        largest_valid_group: Optional[List[Tuple[str, int]]] = None
+    def largest_valid_group(self) -> Optional[List[Card]]:
+        largest_valid_group: Optional[List[Card]] = None
         largest_length: int = 0  
 
         colour_number_dict: Dict[str, List[int]] = {}  
         number_colour_dict: Dict[int, Set[str]] = {}  
         for card in self.collection:  
-            colour, number = card[0], card[1]                    
+            colour, number = card.color, card.number                    
             if colour not in colour_number_dict:
                 colour_number_dict[colour] = [number]
             else:
@@ -114,24 +116,34 @@ class CollectionOfCards:
                     i += 1
 
         if largest_length >= 3:
-            largest_valid_group = sorted([(colour_with_longest_sequence, num) for num in longest_sequence], key=lambda x: x[1])
+            largest_valid_group = [(colour_with_longest_sequence, num) for num in longest_sequence]
 
         for number, colours_set in number_colour_dict.items():
             colours_length = len(colours_set)
             if colours_length >= 3 and colours_length > largest_length:
                 largest_length = colours_length
-                largest_valid_group = sorted([(colour, number) for colour in colours_set], key=lambda x: x[0])
+                largest_valid_group = [(colour, number) for colour in colours_set]
 
-        return largest_valid_group
+        largest_valid_group_cards = []
+        largest_valid_group_cards_set = set()
+
+        for card_tuple in largest_valid_group:
+            colour, number = card_tuple[0], card_tuple[1]
+            for card in self.collection:
+                if card.color == colour and card.number == number and (card.color, card.number) not in largest_valid_group_cards_set:
+                    largest_valid_group_cards.append(card)
+                    largest_valid_group_cards_set.add((card.color, card.number))
+
+        return sorted(largest_valid_group_cards, key = lambda card: (card.number, card.color))
     
 
-    def all_valid_groups_with_largest_length(self) -> List[List[Tuple[str, int]]]:
+    def all_valid_groups_with_largest_length(self) -> List[List[Card]]:
         largest_length_groups: List[List[Tuple[str, int]]] = []   
 
         colour_number_dict: Dict[str, List[int]] = {}  
         number_colour_dict: Dict[int, Set[str]] = {}  
         for card in self.collection:  
-            colour, number = card[0], card[1]                    
+            colour, number = card.color, card.number                    
             if colour not in colour_number_dict:
                 colour_number_dict[colour] = [number]
             else:
@@ -168,68 +180,76 @@ class CollectionOfCards:
         for number, colours_set in number_colour_dict.items():
             colours_length = len(colours_set)
             if colours_length >= 3:
-                largest_length_groups.append(sorted([(colour, number) for colour in colours_set], key=lambda x: x[0]))
+                largest_length_groups.append([(colour, number) for colour in colours_set])
 
-        return sorted(largest_length_groups, key=lambda x: len(x), reverse=True)
+        largest_length_groups_cards = []
+
+        for group in largest_length_groups:
+            group_cards = []
+            group_set = set()
+            for card_tuple in group:
+                colour, number = card_tuple[0], card_tuple[1]
+                for card in self.collection:
+                    if card.color == colour and card.number == number and (card.color, card.number) not in group_set:
+                        group_cards.append(card)
+                        group_set.add((card.color, card.number))
+            largest_length_groups_cards.append(group_cards)
+
+        return sorted(largest_length_groups_cards, key = lambda group: len(group), reverse=True)
     
 
-    @staticmethod
-    def probability_exist_valid_group_drawing_one_from_deck(hands_of_players: List['CollectionOfCards']) -> float:
-        last_player_hand = hands_of_players[-1]
-        if last_player_hand.exist_valid_group():              
-            return 1
+    def all_valid_groups(self) -> List[List[Card]]:
+        valid_groups: List[List[Tuple[str, int]]] = []
+        valid_groups_cards: List[List[Card]] = []
 
-        cards_in_players_hands_count: Dict[Tuple[str, int], int] = {}                     
-        for colour in {'red', 'blue', 'green', 'yellow'}:
-            for number in range(1, 11):
-                cards_in_players_hands_count[(colour, number)] = 0
+        colour_number_dict: Dict[str, List[int]] = {}
+        number_colour_dict: Dict[int, Set[str]] = {}
+        for card in self.collection:
+            colour, number = card.color, card.number
+            if colour not in colour_number_dict:
+                colour_number_dict[colour] = [number]
+            else:
+                colour_number_dict[colour].append(number)
+            if number not in number_colour_dict:
+                number_colour_dict[number] = {colour}
+            else:
+                number_colour_dict[number].add(colour)
 
-        for hand in hands_of_players:
-            for card in hand.collection:
-                colour, number = card[0], card[1]
-                if cards_in_players_hands_count[(colour, number)] == 0:    
-                    cards_in_players_hands_count[(colour, number)] = 1
-                elif cards_in_players_hands_count[(colour, number)] == 1:  
-                    cards_in_players_hands_count[(colour, number)] = 2
-                else:
-                    raise ValueError("Invalid input: The player's hand exceeds the card limit!") 
+        for colour, numbers_list in colour_number_dict.items():
+            sorted_numbers = sorted(set(numbers_list))
+            num_length = len(sorted_numbers)
+            if num_length < 3:
+                continue
+            for start in range(num_length):
+                current_sequence = [sorted_numbers[start]]
+                for end in range(start + 1, num_length):
+                    if sorted_numbers[end] == sorted_numbers[end - 1] + 1:
+                        current_sequence.append(sorted_numbers[end])
+                        if len(current_sequence) >= 3:
+                            valid_groups.append([(colour, num) for num in current_sequence.copy()])
+                    else:
+                        break  
 
-        remaining_cards_count, can_form_valid_group_count = 0, 0   
-        for card, count in cards_in_players_hands_count.items():   
-            if count < 2:                                          
-                remaining_cards_count += (2 - count)               
-                last_player_hand.collection.append((card[0], card[1]))  
-                if last_player_hand.exist_valid_group():                      
-                    can_form_valid_group_count += (2 - count)
-                last_player_hand.collection.pop()                            
+        for number, colours_set in number_colour_dict.items():
+            colours_list = list(colours_set)
+            colours_length = len(colours_list)
+            if colours_length >= 3:
+                for r in range(3, colours_length + 1):
+                    for colour_combo in combinations(colours_list, r):
+                        group = [(colour, number) for colour in colour_combo]
+                        valid_groups.append(group)
 
-        return can_form_valid_group_count / remaining_cards_count
-    
-
-    def probability_exist_valid_group_drawing_from_another(hands_of_players: List['CollectionOfCards']) -> float:
-        last_player_hand = hands_of_players[-1]
-        if last_player_hand.exist_valid_group():              
-            return 1
         
-        other_players_hands = hands_of_players[:-1]
+        for group in valid_groups:
+            group_cards = []
+            group_set = set()
+            for card_tuple in group:
+                colour, number = card_tuple[0], card_tuple[1]
+                for card in self.collection:
+                    if card.color == colour and card.number == number and (card.color, card.number) not in group_set:
+                        group_cards.append(card)
+                        group_set.add((card.color, card.number))
+            valid_groups_cards.append(group_cards)
 
-        cards_in_other_players_hands_count: Dict[Tuple[str, int], int] = {}                    
-        for hand in other_players_hands:
-            for card in hand.collection:
-                colour, number = card[0], card[1]
-                if cards_in_other_players_hands_count[(colour, number)] == 0:    
-                    cards_in_other_players_hands_count[(colour, number)] = 1
-                elif cards_in_other_players_hands_count[(colour, number)] == 1:  
-                    cards_in_other_players_hands_count[(colour, number)] = 2
-                else:
-                    raise ValueError("Invalid input: The player's hand exceeds the card limit!") 
-
-        other_players_cards_count, can_form_valid_group_count = 0, 0   
-        for card, count in cards_in_other_players_hands_count.items():   
-            other_players_cards_count += count                                                      
-            last_player_hand.collection.append((card[0], card[1]))  
-            if last_player_hand.exist_valid_group():                      
-                can_form_valid_group_count += count
-            last_player_hand.collection.pop()                            
-
-        return can_form_valid_group_count / other_players_cards_count
+        return sorted(valid_groups_cards, key = lambda group: len(group), reverse=True)
+    
