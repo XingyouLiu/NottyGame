@@ -43,8 +43,17 @@ class Game:
             'take': pygame.Rect(self.width - 150, self.height - 260, 120, 80),
             'discard': pygame.Rect(self.width - 150, self.height - 340, 120, 80),
             'pass': pygame.Rect(self.width - 150, self.height - 420, 120, 80),
-            'next': pygame.Rect(self.width - 150, self.height - 500, 120, 80)
+            'next': pygame.Rect(self.width - 150, self.height - 500, 120, 80),
+            'computer_takeover': pygame.Rect(self.width - 150, self.height - 580, 120, 80)
         }
+
+        #Buttons for AI strategy selection (initially hidden)
+        self.computer_strategy_buttons = {
+            'random': pygame.Rect(self.width - 300, self.height - 580, 120, 80),
+            'expectation': pygame.Rect(self.width - 300, self.height - 500, 120, 80),
+            'probability': pygame.Rect(self.width - 300, self.height - 420, 120, 80)
+        }
+        self.showing_computer_strategy_buttons = False
 
         self.load_assets()
 
@@ -76,6 +85,9 @@ class Game:
 
         self.target_player = None              #Player to take card from
         self.taken_card = None                 #Card taken by human player pointer
+        self.taken_turn_by_computer = False    #Mark if human let a computer player help take this turn
+        self.temp_computer = None              #Temporary computer player
+        self.temp_computer_finished = False     #Mark if temporary computer player has finished its operations
         
         self.message = ""                      #Messages
         self.current_turn_text = ""            #Display who's turn
@@ -120,11 +132,18 @@ class Game:
         background_image = pygame.image.load(os.path.join('backgrounds', 'gradient_background.png'))
         self.background = pygame.transform.scale(background_image, (self.width, self.height))
 
+        # Load normal buttons
         self.buttons = {}
-        for button_name in ['draw', 'finish draw', 'take', 'discard', 'pass', 'next']:
+        for button_name in ['draw', 'finish draw', 'take', 'discard', 'pass', 'next', 'computer_takeover']:
             button_image = pygame.image.load(os.path.join('buttons', f'{button_name}_normal.png'))
             self.buttons[button_name] = pygame.transform.scale(button_image, (self.button_positions[button_name].width, self.button_positions[button_name].height))
-            
+
+            banned_button = pygame.image.load(os.path.join('buttons_banned', f'{button_name}_banned.png'))
+            self.buttons[f'{button_name}_banned'] = pygame.transform.scale(banned_button, (self.button_positions[button_name].width, self.button_positions[button_name].height))
+           
+        for strategy in ['random', 'expectation', 'probability']:
+            button_image = pygame.image.load(os.path.join('buttons', f'{strategy}_normal.png'))
+            self.buttons[strategy] = pygame.transform.scale(button_image, (120, 80))
 
     def game_screen(self, draw_temp_cards=True):
         """Screen displayed during the game"""
@@ -163,8 +182,10 @@ class Game:
                 y = self.temp_draw_area.y
                 self.screen.blit(self.card_back, (x, y))
 
-        if self.current_player and self.current_player.is_human:  #Display action buttons if it's human player's turn
+        if self.current_player and self.current_player.is_human and not self.taken_turn_by_computer:  #Display action buttons if it's human player's turn
             self.display_action_buttons()
+        elif self.current_player and self.current_player.is_human and self.taken_turn_by_computer and self.temp_computer_finished:
+            self.screen.blit(self.buttons['next'], self.button_positions['next'])
 
         if self.selected_cards:                                    #Highlight valid groups if human player has selected cards
             self.highlight_human_valid_groups()
@@ -274,6 +295,46 @@ class Game:
                     self.screen.blit(self.buttons[action], rect)
             else:
                 self.screen.blit(self.buttons[action], rect)
+            
+            if action == 'draw':
+                if self.turn_state['is_finished_drawing'] or self.turn_state['cards_drawn_count'] >= 3 or len(self.current_player.cards) >= 20 or self.target_player:
+                    self.screen.blit(self.buttons['draw_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['draw'], rect)
+
+            if action == 'take':
+                if self.turn_state['is_drawing'] or self.turn_state['has_taken'] or len(self.current_player.cards) >= 20 or self.target_player:
+                    self.screen.blit(self.buttons['take_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['take'], rect)
+
+            if action == 'pass':
+                if self.turn_state['has_drawn'] or self.turn_state['has_taken'] or self.target_player:
+                    self.screen.blit(self.buttons['pass_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['pass'], rect)
+
+            if action == 'discard':
+                if self.turn_state['is_drawing'] or not self.current_player.exist_valid_group() or not self.selected_cards or self.target_player:
+                    self.screen.blit(self.buttons['discard_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['discard'], rect)
+
+            if action == 'next':
+                if self.turn_state['is_drawing'] or (not self.turn_state['has_drawn'] and not self.turn_state['has_taken'] and not self.turn_state['has_passed']) or self.target_player:
+                    self.screen.blit(self.buttons['next_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['next'], rect)
+
+            if action == 'computer_takeover':
+                if self.turn_state['has_drawn'] or self.turn_state['has_taken'] or self.turn_state['has_passed'] or self.taken_turn_by_computer or self.target_player:
+                    self.screen.blit(self.buttons['computer_takeover_banned'], rect)
+                else:
+                    self.screen.blit(self.buttons['computer_takeover'], rect)
+                    if self.showing_computer_strategy_buttons:
+                        for strategy, rect in self.computer_strategy_buttons.items():
+                            pygame.draw.rect(self.screen, self.WHITE, rect)
+                            self.screen.blit(self.buttons[strategy], rect)
 
 
     def display_player_hand(self, player: Player, y_position: int):
@@ -417,43 +478,95 @@ class Game:
 
 
     def click_in_game(self, pos: Tuple[int, int]):
-        """Human player clicks action buttons or player select buttons on the game screen"""
-        if not self.current_player.is_human:
+        """Human player clicks buttons on the game screen"""
+        if (not self.current_player.is_human) or (self.taken_turn_by_computer and not self.temp_computer_finished): #If it is not human player's turn or temporary computer player has not finished its operations, do not allow human player to click buttons
             return
 
-        if self.showing_player_select_buttons:
-            for player_name, button_rect in self.player_select_buttons.items():  #Check which player select button is clicked
-                if button_rect.collidepoint(pos):   
-                    self.target_player = None
-                    for player in self.players:
-                        if player.name == player_name:
-                            self.target_player = player
-                            break
-                    self.human_take(self.target_player)
+        clicked_button = None
+        clicked_player_button = None
+        clicked_strategy_button = None
+
+        for action, rect in self.button_positions.items():     #Check if human player clicked on any action button
+            if rect.collidepoint(pos):
+                clicked_button = action
+                break
+
+        if self.showing_computer_strategy_buttons:    #Check if human player clicked on any strategy button
+            for strategy, rect in self.computer_strategy_buttons.items():
+                if rect.collidepoint(pos):
+                    clicked_strategy_button = strategy
+                    break
+            
+            if not clicked_strategy_button and clicked_button != 'computer_takeover':  #Hide strategy buttons if clicked anywhere else except strategy buttons and computer_takeover
+                self.showing_computer_strategy_buttons = False
+                if clicked_button:
+                    if clicked_button != 'take':
+                        self.showing_player_select_buttons = False
+
+                    if clicked_button == 'finish draw':
+                        if self.turn_state['is_drawing']:
+                            self.human_finish_drawing()
+                    elif clicked_button == 'draw':
+                        self.human_draw()
+                    elif clicked_button == 'take':
+                        self.human_select_take()
+                    elif clicked_button == 'pass':
+                        self.human_pass()
+                    elif clicked_button == 'discard':
+                        self.human_discard()
+                    elif clicked_button == 'next':
+                        self.human_start_next_turn()
+                    return
+                else:
                     return
 
-        for action, rect in self.button_positions.items():  
-            if rect.collidepoint(pos):
-                if action != 'take':
-                    self.showing_player_select_buttons = False
-                    self.turn_state['waiting_for_take'] = False
+        if self.showing_player_select_buttons:       #Check if human player clicked on any player select button
+            for player_name, button_rect in self.player_select_buttons.items():
+                if button_rect.collidepoint(pos):
+                    clicked_player_button = player_name
+                    break
 
-                if action == 'finish draw':
-                    if self.turn_state['is_drawing']:
-                        self.human_finish_drawing()
-                elif action == 'draw':
-                    self.human_draw()
-                elif action == 'take':
-                    self.human_select_take()
-                elif action == 'pass':
-                    self.human_pass()
-                elif action == 'discard':
-                    self.human_discard()
-                elif action == 'next':
-                    self.human_start_next_turn()
-                return
+        if clicked_button == 'computer_takeover':       #if clicked on computer_takeover button
+            if self.turn_state['has_drawn'] or self.turn_state['has_taken'] or self.turn_state['has_passed']:
+                self.message = "Cannot let computer take over - You have already taken operations this turn"
+            else:
+                self.showing_computer_strategy_buttons = True
+            return
+    
+        if clicked_strategy_button:           
+            self.let_computer_take_turn(clicked_strategy_button)
+            return
 
-        self.click_card(pos)
+        if self.showing_player_select_buttons:       #If human player clicked on any player select button
+            if clicked_player_button:
+                for player in self.players:
+                    if player.name == clicked_player_button:
+                        self.target_player = player
+                        self.showing_player_select_buttons = False
+                        self.human_take(self.target_player)
+                        return        
+        
+        if clicked_button:                          #If clicked on any action button, take actions accordingly
+            if clicked_button != 'take':
+                self.showing_player_select_buttons = False
+
+            if clicked_button == 'finish draw':
+                if self.turn_state['is_drawing']:
+                    self.human_finish_drawing()
+            elif clicked_button == 'draw':
+                self.human_draw()
+            elif clicked_button == 'take':
+                self.human_select_take()
+            elif clicked_button == 'pass':
+                self.human_pass()
+            elif clicked_button == 'discard':
+                self.human_discard()
+            elif clicked_button == 'next':
+                self.human_start_next_turn()
+            return
+        
+        if not self.turn_state['waiting_for_take']:    #When not waiting for taking a card, handle card clicking means selecting cards to discard
+            self.click_card(pos)
 
 
     def click_card(self, pos: Tuple[int, int]):
@@ -489,14 +602,23 @@ class Game:
         """Highlight the card that is hovered"""
         if not self.current_player or not self.current_player.is_human:
             return
+        
+        if self.turn_state['waiting_for_take'] and self.target_player:
+            for card in self.target_player.cards:
+                card.hover = False
+            
+            for card in self.target_player.cards:
+                if card.contains_point(pos):
+                    card.hover = True
+                    break
+        else:                                           #Normal case check current player's cards
+            for card in self.current_player.cards:
+                card.hover = False
 
-        for card in self.current_player.cards:     #Reset hover state for all cards
-            card.hover = False
-
-        for card in self.current_player.cards:      #Check for which card should be hovered in current player's hand
-            if card.contains_point(pos):
-                card.hover = True
-                break
+            for card in self.current_player.cards:
+                if card.contains_point(pos):
+                    card.hover = True
+                    break
 
 
     def human_draw(self):
@@ -536,6 +658,8 @@ class Game:
         if not self.turn_state['is_drawing']:
             self.message = "Cannot finish drawing - not currently drawing"
             return
+        
+        self.turn_state['is_finished_drawing'] = True
 
         temp_area_pos = (self.temp_draw_area.x, self.temp_draw_area.y)           #Drawn cards animation starting from the temporary draw area
         hand_pos = (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y)  #Drawn cards animation targeting at the leftmost end of current player's hand which is the temporary display area
@@ -618,7 +742,7 @@ class Game:
 
 
     def human_take(self, target_player: Player):
-        if not self.turn_state['waiting_for_take']:
+        if not self.turn_state['waiting_for_take'] or not target_player:
             return
 
         self.card_animation.flip_player_cards_to_back(                            #Animate the flipping of target player's cards from face up to face down
@@ -646,18 +770,26 @@ class Game:
             card.face_down = True
             card.set_position(start_x + i * spacing, y_position)
         
-        self.target_player = target_player                                         # Set up for card selection
-        self.turn_state['waiting_for_take'] = True
         self.taken_card = None
         self.message = "Click a card to take"
         
-        while self.turn_state['waiting_for_take']:                                  #Wait for human player to select and click a card to take
+        while self.turn_state['waiting_for_take']:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     return
                 elif event.type == pygame.MOUSEBUTTONDOWN:
-                    self.click_card(event.pos)
+                    clicked_button = None                  #First check whether user clicks on some action buttons
+                    for action, rect in self.button_positions.items():
+                        if rect.collidepoint(event.pos):
+                            clicked_button = action
+                            break
+                    
+                    if clicked_button:
+                        self.message = "Cannot perform other actions - please first click one card to take"
+                        continue  
+                    
+                    self.click_card(event.pos)        #If not clicking on any action button, handle card clicking
                 elif event.type == pygame.MOUSEMOTION:
                     self.card_hover(event.pos)
         
@@ -665,6 +797,9 @@ class Game:
             self.clock.tick(self.FPS)
         
         if self.taken_card:
+            self.turn_state['has_taken'] = True
+            self.turn_state['waiting_for_take'] = False
+
             self.taken_card.face_down = False                                          #Set the taken card to face up after human player clicks on it
             original_pos = (self.taken_card.rect.x, self.taken_card.rect.y)            #The original position and the target position (temporary display area) of the taken card animation
             temp_display_pos = (self.CARD_LEFT_MARGIN, self.current_player.cards[0].rect.y) 
@@ -686,7 +821,6 @@ class Game:
             )
             
             self.current_player.add_card(self.taken_card)                            #Add the taken card to current player's hand
-            self.turn_state['has_taken'] = True
             self.showing_player_select_buttons = False
             self.player_select_buttons.clear()
 
@@ -791,7 +925,10 @@ class Game:
         if not self.turn_state['has_drawn'] and not self.turn_state['has_taken'] and not self.turn_state['has_passed']:
             self.message = "You must take an action before starting next turn"
             return
-
+        
+        self.taken_turn_by_computer = False
+        self.temp_computer = None
+        self.temp_computer_finished = False
         self.selected_cards = []
         self.turn_state = self.initial_turn_state()
         current_index = self.players.index(self.current_player)                      #Get the index of the current player
@@ -802,7 +939,10 @@ class Game:
     def check_and_display_valid_groups(self) -> bool:
         if self.current_player.exist_valid_group():
             if self.current_player.is_human:
-                self.message = "You have valid groups! Select cards and click Discard to remove them"
+                if self.taken_turn_by_computer:
+                    self.message = f"Computer ({self.temp_computer.get_strategy_name()}) will discard the valid groups"
+                else:
+                    self.message = "You have valid groups! Select cards and click Discard to remove them"
                 return True
             else:
                 valid_groups = self.current_player.all_valid_groups()
@@ -834,6 +974,80 @@ class Game:
             else:
                 card.invalid = False
             card.update()
+
+
+    def let_computer_take_turn(self, strategy: str):
+        """Let computer take over the current turn with specified strategy"""
+        self.showing_computer_strategy_buttons = False
+        self.taken_turn_by_computer = True
+        self.temp_computer_finished = False
+        
+        if strategy == 'random':       # Create temporary computer player with the same cards as human player
+            self.temp_computer = RandomStrategyPlayer("Temp Computer")
+        elif strategy == 'expectation':
+            self.temp_computer = ExpectationValueStrategyPlayer("Temp Computer")
+        elif strategy == 'probability':
+            self.temp_computer = ProbabilityStrategyPlayer("Temp Computer")
+              
+        self.temp_computer.cards = self.current_player.cards.copy() 
+               
+        game_state = {
+            'current_player': self.current_player,
+            'other_players': [p for p in self.players if p != self.current_player],
+            'deck_cards': self.deck,
+            'deck_size': len(self.deck)
+        }
+        
+        self.message = f"Computer ({self.temp_computer.get_strategy_name()}) is taking this turn..."
+        self.update_screen()
+        pygame.time.wait(1000)
+        
+        if self.check_and_display_valid_groups():
+            self.computer_discard()
+
+        if len(self.current_player.cards) >= 20:     
+            self.message = f"{self.current_player.name} has reached maximum hand size, passing turn"
+            self.update_screen()
+            pygame.time.wait(2000)
+            self.human_start_next_turn()
+            return
+            
+        action, draw_count, target_player = self.temp_computer.choose_first_action(game_state)
+        
+        if action == 'draw':
+            self.computer_draw(draw_count)
+            self.turn_state['has_drawn'] = True
+            self.temp_computer.cards = self.current_player.cards.copy()
+        elif action == 'take':
+            self.computer_take(target_player)
+            self.turn_state['has_taken'] = True
+            self.temp_computer.cards = self.current_player.cards.copy()
+        elif action == 'pass':
+            self.turn_state['has_passed'] = True
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) chooses to pass"
+            self.temp_computer_finished = True
+            self.update_screen()
+            pygame.time.wait(1000)
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) has finished this turn, click 'Next' to continue"
+            self.update_screen()
+            return
+        
+        action, draw_count, target_player = self.temp_computer.choose_second_action(game_state, action)
+        
+        if action == 'draw':
+            self.computer_draw(draw_count)
+            self.turn_state['has_drawn'] = True
+            self.temp_computer.cards = self.current_player.cards.copy()           
+        elif action == 'take':
+            self.computer_take(target_player)
+            self.turn_state['has_taken'] = True
+            self.temp_computer.cards = self.current_player.cards.copy()
+        elif action == 'pass':
+            self.turn_state['has_passed'] = True
+        
+        self.temp_computer_finished = True
+        self.message = f"Computer ({self.temp_computer.get_strategy_name()}) has finished this turn, click 'Next' to continue"
+        self.update_screen()
 
 
     def computer_turn(self):
@@ -888,7 +1102,10 @@ class Game:
 
 
     def computer_take(self, target_player: Player):
-        self.message = f"{self.current_player.name} decided to take a card from {target_player.name}"
+        if self.current_player.is_human:
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) decided to take a card from {target_player.name}"
+        else:
+            self.message = f"{self.current_player.name} decided to take a card from {target_player.name}"
         self.update_screen()
         pygame.time.wait(1500)
 
@@ -946,7 +1163,10 @@ class Game:
         )
 
         self.current_player.add_card(taken_card)
-        self.message = f"{self.current_player.name} took {taken_card.color} {taken_card.number} from {target_player.name}"
+        if self.current_player.is_human:
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) took {taken_card.color} {taken_card.number} from {target_player.name}"
+        else:
+            self.message = f"{self.current_player.name} took {taken_card.color} {taken_card.number} from {target_player.name}"
 
         if len(target_player.cards) == 0:
             self.game_phase = GamePhase.GAME_OVER
@@ -977,7 +1197,10 @@ class Game:
 
 
     def computer_draw(self, draw_count: int):
-        self.message = f"{self.current_player.name} decided to draw from deck"
+        if self.current_player.is_human:
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) decided to draw from deck"
+        else:
+            self.message = f"{self.current_player.name} decided to draw from deck"
         self.update_screen()
         pygame.time.wait(1500)
 
@@ -1000,7 +1223,10 @@ class Game:
             self.turn_state['cards_drawn_count'] += 1
             self.turn_state['is_drawing'] = True
             
-            self.message = f"{self.current_player.name} has drew {self.turn_state['cards_drawn_count']} cards"
+            if self.current_player.is_human:
+                self.message = f"Computer ({self.temp_computer.get_strategy_name()}) has drew {self.turn_state['cards_drawn_count']} cards"
+            else:
+                self.message = f"{self.current_player.name} has drew {self.turn_state['cards_drawn_count']} cards"
 
             if self.turn_state['cards_drawn_count'] == 3:
                 self.message += " (reached maximum draw limit 3 for this turn)"
@@ -1022,8 +1248,11 @@ class Game:
             temp_area_pos, 20, 70,
             lambda: self.game_screen(draw_temp_cards=False)
         )
-
-        self.message = f"{self.current_player.name} finished drawing cards"
+        
+        if self.current_player.is_human:
+            self.message = f"Computer ({self.temp_computer.get_strategy_name()}) finished drawing cards"
+        else:
+            self.message = f"{self.current_player.name} finished drawing cards"
         self.message += f"\nHas drew: {', '.join(f'{card.color} {card.number}' for card in self.turn_state['drawn_cards'])}"
 
         self.turn_state['is_drawing'] = False
@@ -1107,7 +1336,10 @@ class Game:
                 redraw_game_screen=self.game_screen
             )
             
-            self.message = f"{self.current_player.name} discarded group: {', '.join(f'{card.color} {card.number}' for card in largest_group)}"
+            if self.current_player.is_human:
+                self.message = f"Computer ({self.temp_computer.get_strategy_name()}) discarded group: {', '.join(f'{card.color} {card.number}' for card in largest_group)}"
+            else:
+                self.message = f"{self.current_player.name} discarded group: {', '.join(f'{card.color} {card.number}' for card in largest_group)}"
             
             animation_frames = 0                                 #Wait for the remaining cards to animate to their new positions
             while animation_frames < 30:
