@@ -18,6 +18,16 @@ class GamePhase:
 class Game:
     def __init__(self):
         pygame.init()
+        pygame.mixer.init()
+
+        # load bgm
+        pygame.mixer.music.load('./sound/rednose.ogg')
+        # set bgm volume
+        pygame.mixer.music.set_volume(0.2)
+
+        # replay bgm
+        pygame.mixer.music.play(-1)
+
         self.width = 1600
         self.height = 900
         self.screen = pygame.display.set_mode((self.width, self.height))
@@ -113,6 +123,10 @@ class Game:
             self.CARD_WIDTH,
             self.CARD_HEIGHT
         )
+
+        # Initialization sound
+        self.card_draw_sound = pygame.mixer.Sound("./sound/draw_card.ogg")
+        self.card_shuffle_sound = pygame.mixer.Sound("./sound/card_shuffle.ogg")
 
 
     def initial_turn_state(self):
@@ -502,6 +516,7 @@ class Game:
                 if clicked_button:
                     if clicked_button != 'take':
                         self.showing_player_select_buttons = False
+                        self.turn_state['waiting_for_take'] = False
 
                     if clicked_button == 'finish draw':
                         if self.turn_state['is_drawing']:
@@ -549,6 +564,7 @@ class Game:
         if clicked_button:                          #If clicked on any action button, take actions accordingly
             if clicked_button != 'take':
                 self.showing_player_select_buttons = False
+                self.turn_state['waiting_for_take'] = False
 
             if clicked_button == 'finish draw':
                 if self.turn_state['is_drawing']:
@@ -633,7 +649,7 @@ class Game:
         if len(self.current_player.cards) >= 20:
             self.message = "Cannot draw - hand already has 20 cards"
             return
-
+        self.card_draw_sound.play()
         card = self.deck.pop()                                          #Draw a card from the deck each time human player clicks 'Draw'
         
         start_pos = (self.deck_area.x + min(5, len(self.deck)) * 2,     #Calculate the starting position and target position of the drawn card animation
@@ -752,8 +768,11 @@ class Game:
         
         pygame.time.wait(200)
 
+        self.card_shuffle_sound.play()
+
         center_x = target_player.cards[0].rect.x + len(target_player.cards) * 35 // 2  #Calculate the center position of displaying the shuffling animation
         center_y = target_player.cards[0].rect.y
+        
         self.card_animation.shuffle_in_player_hand(                                #Animate the shuffling of target player's cards
             target_player,
             (center_x, center_y),
@@ -807,6 +826,7 @@ class Game:
             target_player.cards.remove(self.taken_card)                              #Remove the taken card from target player's hand
             self.taken_card.reset_state()                                             #Reset the state of the taken card to default
 
+            self.card_draw_sound.play()
             self.card_animation.move_to_temp_display_area(                            #Animate the moving of the taken card to the temporary display area
                 [self.taken_card],
                 original_pos, temp_display_pos, 0,
@@ -872,6 +892,8 @@ class Game:
                 self.update_screen()
                 self.clock.tick(self.FPS)
 
+            self.card_draw_sound.play()
+
             self.card_animation.discard_card_animation(                            #Animate the discarding of the selected cards
                 card, start_pos, target_pos, self.game_screen
             )
@@ -880,6 +902,7 @@ class Game:
             self.deck.append(card)
 
         random.shuffle(self.deck)
+        self.card_shuffle_sound.play()
         self.card_animation.shuffle_animation(                                    #Animate the shuffling of the deck
             self.deck_area,
             redraw_game_screen=self.game_screen
@@ -1116,6 +1139,8 @@ class Game:
         
         pygame.time.wait(200)
 
+        self.card_shuffle_sound.play()
+
         center_x = target_player.cards[0].rect.x + len(target_player.cards) * 35 // 2
         center_y = target_player.cards[0].rect.y
         self.card_animation.shuffle_in_player_hand(
@@ -1148,7 +1173,7 @@ class Game:
         
         target_player.cards.remove(taken_card)
         taken_card.reset_state()
-
+        self.card_draw_sound.play()
         self.card_animation.move_to_temp_display_area(
             [taken_card],
             original_pos, temp_display_pos, 0,
@@ -1211,7 +1236,8 @@ class Game:
                 return
 
             card = self.deck.pop()
-            
+            self.card_draw_sound.play()
+
             start_pos = (self.deck_area.x + min(5, len(self.deck)) * 2,
                         self.deck_area.y + min(5, len(self.deck)) * 2)
             target_pos = (self.temp_draw_area.x + self.turn_state['cards_drawn_count'] * 20,
@@ -1322,7 +1348,7 @@ class Game:
                 for _ in range(card_index * CARDS_DELAY):
                     self.update_screen()
                     self.clock.tick(self.FPS)
-
+                self.card_draw_sound.play()
                 self.card_animation.discard_card_animation(
                     card, start_pos, target_pos, self.game_screen
                 )
@@ -1331,6 +1357,7 @@ class Game:
                 self.deck.append(card)
 
             random.shuffle(self.deck)
+            self.card_shuffle_sound.play()
             self.card_animation.shuffle_animation(
                 self.deck_area,
                 redraw_game_screen=self.game_screen
