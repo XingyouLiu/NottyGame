@@ -50,7 +50,7 @@ class CollectionOfCards:
                 number_colour_dict[number].add(colour)
 
         for numbers_list in colour_number_dict.values():
-            sorted_numbers = list(set(sorted(numbers_list)))
+            sorted_numbers = sorted(list(set((numbers_list))))
             num_length = len(sorted_numbers)
 
             if num_length < 3:
@@ -252,4 +252,3 @@ class CollectionOfCards:
             valid_groups_cards.append(group_cards)
 
         return sorted(valid_groups_cards, key = lambda group: len(group), reverse=True)
-    
