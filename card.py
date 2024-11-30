@@ -8,7 +8,7 @@ class Card:
     def initialize_back_image(cls, card_width: int, card_height: int):
         """Initialize card back image"""
         if cls.back_image is None:
-            cls.back_image = pygame.image.load('cards/card_back.jpg')
+            cls.back_image = pygame.image.load('cards/card_back.png')
             cls.back_image = pygame.transform.scale(cls.back_image, (card_width, card_height))
 
     def __init__(self, color: str, number: int, 
@@ -43,8 +43,9 @@ class Card:
         self.animation_speed = 16
         
         self.face_down = False
-        
 
+    def __str__(self):
+        return f"{self.color} {self.number}"
         
     def update(self):
         if self.current_x != self.target_x:    #Card animation if not at target position
