@@ -300,11 +300,11 @@ class CardAnimation:
         for frame in range(RISE_FRAMES):
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
+            redraw_game_screen()
             
             rise_progress = frame / RISE_FRAMES
             current_y = start_pos[1] + RISE_HEIGHT * rise_progress
             
-            redraw_game_screen()
             self.screen.blit(card.image, (start_pos[0], current_y))
             
             pygame.display.flip()
@@ -315,6 +315,7 @@ class CardAnimation:
         for frame in range(FLIGHT_FRAMES):
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
+            redraw_game_screen()
             
             flight_progress = frame / FLIGHT_FRAMES
             smooth_progress = (1 - (1 - flight_progress) * (1 - flight_progress))
@@ -332,16 +333,5 @@ class CardAnimation:
                     scaled_card = pygame.transform.scale(self.card_back, (width, self.card_height))
                     self.screen.blit(scaled_card, (current_x + (self.card_width - width) // 2, current_y))
             
-            redraw_game_screen()
             pygame.display.flip()
             self.clock.tick(self.FPS)
-
-
-
-class UIAnimations:
-    def __init__(self, screen: pygame.Surface):
-        pass
-        
-    def button_hover_animation(self, button_rect: pygame.Rect):
-        """按钮悬停效果"""
-        pass
