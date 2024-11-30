@@ -1,0 +1,9 @@
+{
+  "strategy_list":["X-AGGRESSIVE", "DEFENSIVE","AGGRESSIVE", "X-DEFENSIVE"],
+  "strategy_class_dict": {
+    "DEFENSIVE":"RandomStrategyPlayer",
+    "X-DEFENSIVE":"ExpectationValueStrategyPlayer",
+    "X-AGGRESSIVE":"ProbabilityStrategyPlayer",
+    "AGGRESSIVE":"RulebasedStrategyPlayer"
+  }
+}
