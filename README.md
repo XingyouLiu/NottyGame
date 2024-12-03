@@ -105,7 +105,7 @@ When groups have more than 3 cards or overlapping cards, formulate the problem a
 
   Maximise the total number of discarded cards:
 
-  $text{Maximise} \quad \sum_{i} (\text{number of cards in group } i) \times x_i$
+  ${Maximise} \quad \sum_{i} (\text{number of cards in group } i) \times x_i$
 
 - **Constraints**:
 
