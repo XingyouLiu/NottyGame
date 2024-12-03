@@ -111,7 +111,6 @@ When groups have more than 3 cards or overlapping cards, formulate the problem a
 
   Ensure that no card is used more times than it appears in the hand:
 
-  
   $$\sum_{\text{groups containing card } c} x_i \leq \text{number of } c \text{ in hand}, \quad \forall c \in \text{hand}$$
 
 ###### b. Implement the ILP Model
@@ -178,85 +177,70 @@ X-DEFENSIVE is a cautious and defensive computer player. In each turn, it carefu
 X-DEFENSIVE guides its decisions by calculating the expected value of actions that reduce the number of hand cards.
 ##### Draw Operation
 
-- **Total Combinations**: The total number of combinations for drawing \( n \) cards from the remaining deck is:
+- **Total Combinations**: The total number of combinations for drawing $n$ cards from the remaining deck is:
   
-  \[
-  C = \binom{D}{n}
-  \]
+  $C = \binom{D}{n}$
   
-  where \( D \) is the number of remaining cards in the deck.
+  where $D$ is the number of remaining cards in the deck.
 
-- **Sampling Estimation**: If the total combinations \( C \) are too large (e.g., \( C > 2000 \)), a random subset of combinations is sampled for estimation. The sampling ratio is:
+- **Sampling Estimation**: If the total combinations $C$ are too large (e.g., $C > 2000$), a random subset of combinations is sampled for estimation. The sampling ratio is:
   
-  \[
-  \text{Sampling Ratio} = \frac{1}{k}
-  \]
+  $$\text{Sampling Ratio} = \frac{1}{k}$$
+
   
-  where \( k = \left\lfloor \frac{C}{1000} \right\rfloor \).
+  where $k = \left\lfloor \frac{C}{1000} \right\rfloor$.
 
   Note: 
-  1. When \( C \) is less than 2000, \( k = 1 \) and no sampling is performed.
+  1. When $C$ is less than 2000, $k = 1$ and no sampling is performed.
   2. Has verified using test scripts that the error in estimating the expected value using the sampling strategy is sufficiently small compared to the exact expected value calculated without sampling. In the vast majority of cases, the error is less than 5%, and only very rarely falls within the 5%-10% range, which is an acceptable margin of error.
 
 - **Calculate Expected Discards**:
   
   1. For each sampled combination, temporarily add it to the current hand.
   2. Check if there exists a valid group in the hand using the `exist_valid_group` method.
-  3. If a valid group exists, use the `find_best_discard_count` method implemented in the `CollectionOfCards` class to calculate the number of discardable cards \( d_i \).
+  3. If a valid group exists, use the `find_best_discard_count` method implemented in the `CollectionOfCards` class to calculate the number of discardable cards $d_i$.
   4. Accumulate the expected number of discards across all combinations.
 
 - **Expected Value Calculation**:
   
   The probability of drawing each combination is:
   
-  \[
-  P_i = \frac{1}{C}
-  \]
+  $$P_i = \frac{1}{C}$$
   
   The total expected number of discards is:
   
-  \[
-  E_{\text{discard}} = \sum_i P_i \times d_i \times k
-  \]
+  $$E_{\text{discard}} = \sum_i P_i \times d_i \times k$$
   
-  where \( k \) is the sampling amplification factor.
+  where $k$ is the sampling amplification factor.
 
 - **Expected Hand Reduction**:
   
-  \[
-  E_{\text{draw}} = E_{\text{discard}} - n
-  \]
+  $$E_{\text{draw}} = E_{\text{discard}} - n$$
   
-  where \( n \) is the number of cards drawn.
+  where $n$ is the number of cards drawn.
 
 ##### Take Operation
 - **Exclusion Target**: If a player's hand size is less than or equal to 2, X-DEFENSIVE will not consider taking a card from that player even if this action has the highest expected value. 
 
 - **Expected Value Calculation**:
   
-  1. Let \( M \) be the number of cards in the target player's hand.
+  1. Let $M$ be the number of cards in the target player's hand.
   2. The probability of taking each card is:
      
-     \[
-     P_j = \frac{1}{M}
-     \]
+     $$P_j = \frac{1}{M}$$
   
   3. For each card in the target player's hand:
      - Temporarily add it to the current hand.
-     - Check for a valid group and calculate the number of discardable cards \( d_j \) using the `find_best_discard_count` method implemented in the `CollectionOfCards` class.
+     - Check for a valid group and calculate the number of discardable cards $d_j$ using the `find_best_discard_count` method implemented in the `CollectionOfCards` class.
      - Accumulate the expected number of discards.
   
   4. The total expected number of discards is:
      
-     \[
-     E_{\text{discard}} = \sum_j P_j \times d_j
-     \]
+     $$E_{\text{discard}} = \sum_j P_j \times d_j$$
   
   5. The expected hand reduction is:
      
-     \[
-     E_{\text{take}} = E_{\text{discard}} - 1
-     \]
+     $$E_{\text{take}} = E_{\text{discard}} - 1$$
      
      The subtraction of 1 account for the taken card.
 
@@ -264,9 +248,7 @@ X-DEFENSIVE guides its decisions by calculating the expected value of actions th
 
 The expected hand reduction for passing is 0 since the number of cards remains unchanged:
   
-\[
-E_{\text{pass}} = 0
-\]
+$$E_{\text{pass}} = 0$$
 
 Explanation: As the computer player will immediately discard all possible valid groups whenever valid groups exist, there wouldn't exist any valid group at this point to be discarded, so the expected reduction of **pass** action must be 0.
 
@@ -295,13 +277,11 @@ X-AGGRESSIVE guides his decisions by calculating the probability of having a val
 
 ##### Draw Operation
 
-- **Total Combinations**: The total number of combinations for drawing \( n \) cards from the remaining deck is:
+- **Total Combinations**: The total number of combinations for drawing $n$ cards from the remaining deck is:
   
-  \[
-  C = \binom{D}{n}
-  \]
+  $$C = \binom{D}{n}$$
   
-  where \( D \) is the number of remaining cards in the deck.
+  where $D$ is the number of remaining cards in the deck.
 
 - **Iterate Through All Combinations**:
   
@@ -309,14 +289,12 @@ X-AGGRESSIVE guides his decisions by calculating the probability of having a val
   2. For each combination:
      - Temporarily add it to the current hand.
      - Check if there exists a valid group in the hand using the `exist_valid_group` method.
-     - If a valid group exists, increment the counter \( V \).
+     - If a valid group exists, increment the counter $V$.
      - Remove the combination from the hand.
   
 - **Calculate Probability of Valid Group**:
   
-  \[
-  P_{\text{valid}} = \frac{V}{C}
-  \]
+  $$P_{\text{valid}} = \frac{V}{C}$$
 
 ##### Take Operation
 
@@ -324,18 +302,16 @@ X-AGGRESSIVE guides his decisions by calculating the probability of having a val
 
 - **Probability Calculation**:
   
-  1. Let \( M \) be the number of cards in the target player's hand.
+  1. Let $M$ be the number of cards in the target player's hand.
   2. For each card in the target player's hand:
      - Temporarily add it to the current hand.
      - Check for a valid group.
-     - If a valid group exists, increment the counter \( V \).
+     - If a valid group exists, increment the counter $V$.
      - Remove the card from the hand.
   
   3. The probability of having a valid group after taking a card is:
      
-     \[
-     P_{\text{valid}} = \frac{V}{M}
-     \]
+     $$P_{\text{valid}} = \frac{V}{M}$$
 
 ##### Pass Operation
 
@@ -400,3 +376,5 @@ If no "worthy targets" are found or a take action has already been performed, AG
 - **Hand Size ≥ 8 and < 16**: Randomly draw 1 to 3 cards.
 - **Hand Size ≥ 16 and < 20**: Randomly choose to draw 0 or 1 card.
 - **Hand Size ≥ 20**: Choose to pass.
+
+
