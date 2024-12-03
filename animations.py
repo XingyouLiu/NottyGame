@@ -1,22 +1,22 @@
 from player import Player
 import pygame
 from card import Card
-import random
 from typing import List, Tuple
 
 class CardAnimation:
     def __init__(self, screen: pygame.Surface, clock: pygame.time.Clock, 
                  card_back: pygame.Surface, background: pygame.Surface,
                  background_color: Tuple[int, int, int],
-                 card_width: int, card_height: int):
+                 card_width: int, card_height: int, game=None):
         self.screen = screen
         self.clock = clock
         self.card_back = card_back
         self.background = background
         self.background_color = background_color
-        self.FPS = 60
+        self.FPS = 120
         self.card_width = card_width
         self.card_height = card_height
+        self.game = game
 
 
     def shuffle_animation(self, deck_area: pygame.Rect, redraw_game_screen=None, num_cards: int = 20, rounds: int = 2):
@@ -95,7 +95,7 @@ class CardAnimation:
                          redraw_game_screen) -> None:
         """Card moving from deck to temporary draw area"""
         animation_frames = 0
-        max_frames = 30
+        max_frames = 15
         
         while animation_frames < max_frames:
             self.screen.fill(self.background_color)
@@ -119,7 +119,7 @@ class CardAnimation:
                            redraw_game_screen) -> None:
         """Card flipping animation in temporary draw area"""
         animation_frames = 0
-        while animation_frames < 20:
+        while animation_frames < 10:
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
             redraw_game_screen()
@@ -148,12 +148,12 @@ class CardAnimation:
                              redraw_game_screen) -> None:
         """Card spreading animation after flipping to front in temporary draw area"""
         animation_frames = 0
-        while animation_frames < 30:
+        while animation_frames < 15:
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
             redraw_game_screen()
             
-            progress = animation_frames / 30
+            progress = animation_frames / 15
             current_spacing = initial_spacing + (final_spacing - initial_spacing) * progress
             
             for i, card in enumerate(cards):
@@ -170,7 +170,7 @@ class CardAnimation:
                                 spacing: int, redraw_game_screen) -> None:
         """Display cards drawed temporarily in temporary draw area after spreading"""
         display_time = 0
-        while display_time < 120:
+        while display_time < 60:
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
             redraw_game_screen()
@@ -189,7 +189,7 @@ class CardAnimation:
                              target_pos: Tuple[int, int], spacing: int,
                              redraw_game_screen) -> None:
         """Card moving from temporary draw area to temporary display area, at the leftmost side of the player's hand area"""
-        MOVE_FRAMES = 20
+        MOVE_FRAMES = 10
         for frame in range(MOVE_FRAMES):
             self.screen.fill(self.background_color)
             self.screen.blit(self.background, (0, 0))
@@ -294,7 +294,7 @@ class CardAnimation:
                          target_pos: Tuple[int, int], redraw_game_screen) -> None:
         """Single card discard animation including rise, flight and flip"""
         # Rise animation
-        RISE_FRAMES = 15
+        RISE_FRAMES = 18
         RISE_HEIGHT = -50
         
         for frame in range(RISE_FRAMES):
@@ -335,3 +335,112 @@ class CardAnimation:
             
             pygame.display.flip()
             self.clock.tick(self.FPS)
+
+    
+    def get_two_players_positions(self):
+        if not self.game:
+            return
+        
+        computer_y = 150  
+        human_y = self.game.height - 200  
+        
+        start_x = self.game.CARD_LEFT_MARGIN
+        
+        return [(start_x, computer_y), (start_x, human_y)]
+
+    def get_three_players_positions(self):
+        if not self.game:
+            return
+        
+        computer1_y = 150  
+        computer2_y = 300  
+        human_y = self.game.height - 200  
+    
+        start_x = self.game.CARD_LEFT_MARGIN
+        
+        return [(start_x, computer1_y), (start_x, computer2_y), (start_x, human_y)]
+    
+    def deal_cards_with_trailing_effect(self, deck_positions: List[Tuple[int, int]], player_positions: List[Tuple[int, int]]):
+        card_spacing = 70
+        cards_per_row = 5  
+
+        expanded_positions = []
+        for base_x, base_y in player_positions:
+            expanded_positions.extend([(base_x + i * card_spacing, base_y) for i in range(cards_per_row)])
+
+        current_card = 0
+        cards_at_target = []
+        trail_positions = [] 
+
+        while current_card < len(expanded_positions):
+            self.screen.fill(self.background_color)
+            self.screen.blit(self.background, (0, 0))
+
+            deck_x, deck_y = deck_positions[0]
+            remaining_cards = len(expanded_positions) - current_card
+            for i in range(min(remaining_cards, 20)):
+                offset = i * 2
+                self.screen.blit(self.card_back, (deck_x, deck_y - offset))
+
+            for idx in cards_at_target:
+                self.screen.blit(self.card_back, expanded_positions[idx])
+
+            for pos, alpha in trail_positions:
+                card_surface = self.card_back.copy()
+                card_surface.set_alpha(alpha)
+                self.screen.blit(card_surface, pos)
+
+            current_pos = deck_positions[0]
+            target_pos = expanded_positions[current_card]
+            step_x = (target_pos[0] - current_pos[0]) * 0.3  
+            step_y = (target_pos[1] - current_pos[1]) * 0.3 
+            deck_positions[0] = (current_pos[0] + step_x, current_pos[1] + step_y)
+
+            trail_positions.append((deck_positions[0], 255))
+            if len(trail_positions) > 8:
+                trail_positions.pop(0)
+
+            trail_positions = [(pos, max(alpha - 34, 0)) for pos, alpha in trail_positions] 
+
+            x, y = deck_positions[0]
+            self.screen.blit(self.card_back, (x, y))
+
+            if abs(target_pos[0] - current_pos[0]) < 5 and abs(target_pos[1] - current_pos[1]) < 5:
+                cards_at_target.append(current_card)
+                current_card += 1
+
+            pygame.display.flip()
+            self.clock.tick(self.FPS * 3)
+
+        for row_idx, (player_x, player_y) in enumerate(player_positions):
+            row_start = row_idx * cards_per_row
+            row_end = min(row_start + cards_per_row, len(expanded_positions))  # 防止溢出
+
+            all_cards_collected = False
+            while not all_cards_collected:
+                all_cards_collected = True
+                self.screen.fill(self.background_color)
+                self.screen.blit(self.background, (0, 0))
+
+                for card_idx, pos in enumerate(expanded_positions):
+                    if card_idx < row_start or card_idx >= row_end:  # 非当前行
+                        x, y = pos
+                        self.screen.blit(self.card_back, (x, y))
+
+                for card_idx in range(row_start, row_end):
+                    current_pos = expanded_positions[card_idx]
+                    target_pos = (player_x, current_pos[1])
+
+                    if abs(target_pos[0] - current_pos[0]) > 5:
+                        all_cards_collected = False  
+                        step_x = (target_pos[0] - current_pos[0]) * 0.1 
+                        expanded_positions[card_idx] = (
+                            current_pos[0] + step_x,
+                            current_pos[1], 
+                        )
+
+                    x, y = expanded_positions[card_idx]
+                    self.screen.blit(self.card_back, (x, y))
+
+                pygame.display.flip()
+                self.clock.tick(self.FPS * 2)
