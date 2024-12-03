@@ -111,9 +111,8 @@ When groups have more than 3 cards or overlapping cards, formulate the problem a
 
   Ensure that no card is used more times than it appears in the hand:
 
-  $
-  sum_{\text{groups containing card } c} x_i \leq \text{number of } c \text{ in hand}, \quad \forall c \in \text{hand}
-  $
+  
+  $\sum_{\text{groups containing card } c} x_i \leq \text{number of } c \text{ in hand}, \quad \forall c \in \text{hand}$
 
 ###### b. Implement the ILP Model
 
