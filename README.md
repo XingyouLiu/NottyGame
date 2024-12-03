@@ -36,18 +36,22 @@ The key point of the optimal discard strategy is to choose combinations of valid
 **Examples:**
 
 1. **Example 1:**
+   - **hand:**
+     - `{red 1, red 2, red 3, red 4, red 5, green 1, yellow 1, blue 8, yellow 7}`
    - **Valid Groups:**
-     - `{red 1, red 2, red 3, red 4}`
+     - `{red 1, red 2, red 3, red 4, red 5}`
      - `{red 1, green 1, yellow 1}`
-   - **Issue:** Only one `red 1` in hand.
-   - **Optimal Strategy:** Instead of discarding the longer group `{red 1, red 2, red 3, red 4}` (discarding 4 cards and breaking the second group), discard `{red 2, red 3, red 4}` and `{red 1, green 1, yellow 1}` for a total of 6 discarded cards.
+   - **Issue:** Only one `red 1` in hand, while two valid groups contain `red 1`.
+   - **Optimal Strategy:** Instead of discarding the largest group `{red 1, red 2, red 3, red 4, red 5}` (discarding 5 cards and breaking the second group), discard `{red 2, red 3, red 4, red 5}` and `{red 1, green 1, yellow 1}` for a total of 7 discarded cards.
 
 2. **Example 2:**
+   - **hand:**
+     - `{red 1, red 2, red 3, blue 1, yellow 1, blue 3, yellow 3, blue 8, yellow 7}`  
    - **Valid Groups:**
      - `{red 1, red 2, red 3}`
      - `{red 1, blue 1, yellow 1}`
      - `{red 3, blue 3, yellow 3}`
-   - **Issue:** Discarding `{red 1, red 2, red 3}` breaks the other two groups.
+   - **Issue:** Only one `red 1` and one `red 3` in hand, while two groups contain `red 1` and `red 3`. Discarding `{red 1, red 2, red 3}` breaks the other two groups.
    - **Optimal Strategy:** Discard `{red 1, blue 1, yellow 1}` and `{red 3, blue 3, yellow 3}` for a total of 6 discarded cards.
 
 #### Algorithm Implementation
