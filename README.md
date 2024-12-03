@@ -99,23 +99,23 @@ When groups have more than 3 cards or overlapping cards, formulate the problem a
 
 - **Variables**:
 
-  Let \( x_i \) be a binary variable indicating whether group \( i \) is selected (1) or not (0).
+  Let $x_i$ be a binary variable indicating whether group $i$ is selected (1) or not (0).
 
 - **Objective Function**:
 
   Maximise the total number of discarded cards:
 
-  \[
+  $$
   \text{Maximise} \quad \sum_{i} (\text{number of cards in group } i) \times x_i
-  \]
+  $$
 
 - **Constraints**:
 
   Ensure that no card is used more times than it appears in the hand:
 
-  \[
+  $$
   \sum_{\text{groups containing card } c} x_i \leq \text{number of } c \text{ in hand}, \quad \forall c \in \text{hand}
-  \]
+  $$
 
 ###### b. Implement the ILP Model
 
@@ -275,7 +275,7 @@ Explanation: As the computer player will immediately discard all possible valid 
 
 #### Action Selection
 
-X-DEFENSIVE selects the action with the highest expected hand reduction based on the calculated values.
+X-DEFENSIVE selects the action with the highest expected hand reduction among all currently available actions based on the calculated values.
 
 #### Special Rules
 
@@ -346,7 +346,7 @@ The probability of having a valid group after passing is 0 since the hand does n
 
 #### Action Selection
 
-X-AGGRESSIVE selects the action with the highest probability of having a valid group based on the calculated probabilities.
+X-AGGRESSIVE selects the action with the highest probability of having a valid group among all currently available actions based on the calculated probabilities.
 
 ---
 
