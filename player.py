@@ -1,9 +1,13 @@
+import copy
+import random
+from tkinter import Place
 from typing import List, Tuple, Optional, Dict
 from collection_of_cards import CollectionOfCards
 from card import Card
 import math
 from itertools import combinations
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed, ThreadPoolExecutor
+
 
 class Player:
     def __init__(self, name: str, is_human: bool = True):
@@ -33,11 +37,7 @@ class Player:
     def largest_valid_group(self) -> List[Card]:
         collection = CollectionOfCards(self.cards)
         return collection.largest_valid_group()
-    
-    
-    def all_valid_groups_with_largest_length(self) -> List[List[Card]]:
-        collection = CollectionOfCards(self.cards)
-        return collection.all_valid_groups_with_largest_length()
+
     
     def all_valid_groups(self) -> List[List[Card]]:
         collection = CollectionOfCards(self.cards)
@@ -86,6 +86,7 @@ class Player:
 
         return probabilities
     
+    
 
     def calculate_draw_expectation(self, draw_count: int, game_state: Dict) -> Tuple[Tuple, float]:
         collection = CollectionOfCards(game_state['current_player'].cards.copy())
@@ -95,33 +96,47 @@ class Player:
             for card in game_state['deck_cards']:
                 collection.collection.append(card)
                 if collection.exist_valid_group():
-                    draw_expected_value += collection.find_best_discard()[1] * 1 / game_state['deck_size']
+                    draw_expected_value += collection.find_best_discard_count() * 1 / game_state['deck_size']
                 collection.collection.pop()
             return (('draw', 1, None), draw_expected_value - draw_count)
         else:
-            combination_count = math.factorial(game_state['deck_size']) // (
-                math.factorial(draw_count) * math.factorial(game_state['deck_size'] - draw_count))
-            for combination in combinations(game_state['deck_cards'], draw_count):
-                for card in combination:
-                    collection.collection.append(card)
-                if collection.exist_valid_group():
-                    draw_expected_value += collection.find_best_discard()[1] * 1 / combination_count
-                for card in combination:
-                    collection.collection.pop()
-            return (('draw', draw_count, None), draw_expected_value - draw_count)
+            combination_count = math.factorial(game_state['deck_size']) // (math.factorial(draw_count) * math.factorial(game_state['deck_size'] - draw_count))
+            
+            parameter = 1   
+            sample_list = []
+            if combination_count > 2000:
+                parameter = combination_count // 1000
+                sample_list = random.sample(list(combinations(game_state['deck_cards'], draw_count)), combination_count // parameter)    
+                for combination in sample_list:
+                    for card in combination:
+                        collection.collection.append(card)
+                    if collection.exist_valid_group():
+                        draw_expected_value += collection.find_best_discard_count() * 1 / combination_count
+                    for card in combination:
+                        collection.collection.pop()
+            else:
+                for combination in combinations(game_state['deck_cards'], draw_count):
+                    for card in combination:
+                        collection.collection.append(card)
+                    if collection.exist_valid_group():
+                        draw_expected_value += collection.find_best_discard_count() * 1 / combination_count
+                    for card in combination:
+                        collection.collection.pop()
+
+            return (('draw', draw_count, None), draw_expected_value * parameter - draw_count)
         
-    def calculate_take_expectations(self, game_state: Dict) -> List[Tuple[Tuple, float]]:
+        
+    def calculate_take_expectations(self, game_state: Dict, target_player) -> Tuple[Tuple, float]:
         collection = CollectionOfCards(game_state['current_player'].cards.copy())
-        results = []
-        for player in game_state['other_players']:
-            take_expected_value = 0
-            for card in player.cards:
-                collection.collection.append(card)
-                if collection.exist_valid_group():
-                    take_expected_value += collection.find_best_discard()[1] * 1 / len(player.cards)
-                collection.collection.pop()
-            results.append((('take', None, player), take_expected_value - 1))
-        return results
+
+        take_expected_value = 0
+        for card in target_player.cards:
+            collection.collection.append(card)
+            if collection.exist_valid_group():
+                take_expected_value += collection.find_best_discard_count() * 1 / len(target_player.cards)
+            collection.collection.pop()
+
+        return (('take', None, target_player), take_expected_value - 1)
     
 
     def draw_expectation(self, game_state: Dict):
@@ -153,13 +168,14 @@ class Player:
         """
         take_expected_values = {}
         
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            take_future = executor.submit(
-                self.calculate_take_expectations, 
-                game_state
-            )
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            take_futures = [
+                executor.submit(
+                    self.calculate_take_expectations, game_state, target_player) for target_player in game_state['other_players']
+            ]
 
-            for action, value in take_future.result():
+            for future in take_futures:
+                action, value = future.result()
                 take_expected_values[action] = value
                 
         return take_expected_values
